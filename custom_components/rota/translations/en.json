@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Rota",
+        "description": "Add the Rota chore board. After this, manage everyone, crews, chores and settings from the Rota admin dashboard."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Rota is already set up."
+    }
+  }
+}

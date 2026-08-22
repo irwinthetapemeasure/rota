@@ -1,0 +1,13 @@
+{
+  "domain": "rota",
+  "name": "Rota",
+  "codeowners": ["@irwinthetapemeasure"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend", "websocket_api"],
+  "documentation": "https://github.com/irwinthetapemeasure/rota",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/irwinthetapemeasure/rota/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

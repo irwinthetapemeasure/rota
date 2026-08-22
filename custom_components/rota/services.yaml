@@ -1,0 +1,76 @@
+mark_done:
+  name: Mark chore done
+  description: >-
+    Mark a chore's occurrence done for a date. If the chore requires approval
+    (and approvals are enabled), it becomes pending a lead's check instead.
+  fields:
+    chore:
+      name: Chore
+      description: Chore id or name.
+      required: true
+      example: dishwasher
+      selector:
+        text:
+    date:
+      name: Date
+      description: The occurrence date. Defaults to today.
+      example: "2026-08-18"
+      selector:
+        date:
+    part:
+      name: Daypart
+      description: For chores that run several times a day, which daypart id.
+      example: lunch
+      selector:
+        text:
+    by:
+      name: By
+      description: Who did it (optional).
+      example: Adon
+      selector:
+        text:
+
+approve:
+  name: Approve chore
+  description: Approve a pending occurrence, posting its points.
+  fields:
+    chore:
+      name: Chore
+      description: Chore id or name.
+      required: true
+      example: clean_bathhouse
+      selector:
+        text:
+    date:
+      name: Date
+      description: The occurrence date. Defaults to today.
+      selector:
+        date:
+    by:
+      name: By
+      description: The lead approving (optional).
+      selector:
+        text:
+
+remind_now:
+  name: Send reminders now
+  description: >-
+    Immediately send each active volunteer a reminder about their unfinished
+    chores today (respects the Reminders setting). Handy for testing.
+
+undo:
+  name: Undo chore
+  description: Revert an occurrence to not-done and remove any points it earned.
+  fields:
+    chore:
+      name: Chore
+      description: Chore id or name.
+      required: true
+      example: dishwasher
+      selector:
+        text:
+    date:
+      name: Date
+      description: The occurrence date. Defaults to today.
+      selector:
+        date:
