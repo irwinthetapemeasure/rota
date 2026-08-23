@@ -15,6 +15,7 @@ class RotaAdminCard extends HTMLElement {
     this._state = null;
     this._search = "";
     this._confirmDel = null;
+    this._confirmDelChore = null;
     this._sel = null; // crew-board selection (volunteer id)
     this._editing = null; // chore being edited (working copy) or null
     this._pointsData = null; // cached rota/points report
@@ -184,6 +185,10 @@ class RotaAdminCard extends HTMLElement {
   }
 
   _choreRow(c, s) {
+    if (this._confirmDelChore === c.id) {
+      return `<div class="crow"><div class="cmeta"><b>${escapeHtml(c.name)}</b><div class="csub danger">Delete this chore?</div></div>
+        <div class="cact"><button class="btn" data-cdelno="1">Cancel</button><button class="btn danger" data-cdelyes="${c.id}">Delete</button></div></div>`;
+    }
     const badges = [];
     if (!["daily", "every_n"].includes(c.frequency || "daily")) badges.push(`<span class="cb">${(c.mode || "floating") === "scheduled" ? "Scheduled" : "Floating"}</span>`);
     if (s.points && c.points) badges.push(`<span class="cb">${c.points} pts</span>`);
@@ -191,7 +196,8 @@ class RotaAdminCard extends HTMLElement {
     if (c.dayparts && c.dayparts.length) badges.push(`<span class="cb">${c.dayparts.length}×/day</span>`);
     if (c.checklist && c.checklist.length) badges.push(`<span class="cb">${c.checklist.length}-item list</span>`);
     return `<div class="crow"><div class="cmeta" data-editchore="${c.id}"><b>${escapeHtml(c.name)}</b><div class="csub">${freqLabel(c)} · ${escapeHtml(assignLabel(c))} ${badges.join(" ")}</div></div>
-      <button class="rm" data-delchore="${c.id}" aria-label="Delete">${TRASH}</button></div>`;
+      <div class="cact"><button class="rm" data-dupchore="${c.id}" aria-label="Duplicate">${COPY}</button>
+      <button class="rm" data-delchore="${c.id}" aria-label="Delete">${TRASH}</button></div></div>`;
   }
 
   _choreDrawer() {
@@ -420,7 +426,7 @@ class RotaAdminCard extends HTMLElement {
   _onClick(e) {
     const t = (a) => e.target.closest(`[${a}]`);
     let el;
-    if ((el = t("data-view"))) { this._view = el.getAttribute("data-view"); this._confirmDel = null; if (this._view === "points") this._loadPoints(); this._render(); return; }
+    if ((el = t("data-view"))) { this._view = el.getAttribute("data-view"); this._confirmDel = null; this._confirmDelChore = null; if (this._view === "points") this._loadPoints(); this._render(); return; }
     if ((el = t("data-pview"))) { this._pointsView = el.getAttribute("data-pview"); this._render(); return; }
     if (t("data-preload")) { this._loadPoints(); return; }
     if ((el = t("data-vactive"))) { const v = this._vol(el.getAttribute("data-vactive")); this._cmd("rota/volunteer/save", { volunteer: { id: v.id, active: !v.active } }); return; }
@@ -454,7 +460,10 @@ class RotaAdminCard extends HTMLElement {
     // ---- Chores ----
     if (t("data-addchore")) { this._editing = { assign: "person", frequency: "daily", points: 0, person: (this._state.volunteers[0] || {}).name, active: true }; this._render(); return; }
     if ((el = t("data-editchore"))) { const c = this._state.chores.find((x) => x.id === el.getAttribute("data-editchore")); if (c) { this._editing = JSON.parse(JSON.stringify(c)); this._render(); } return; }
-    if ((el = t("data-delchore"))) { this._editing = null; this._cmd("rota/chore/delete", { target: el.getAttribute("data-delchore") }); return; }
+    if ((el = t("data-delchore"))) { this._editing = null; this._confirmDelChore = el.getAttribute("data-delchore"); this._render(); return; }
+    if (t("data-cdelno")) { this._confirmDelChore = null; this._render(); return; }
+    if ((el = t("data-cdelyes"))) { const id = el.getAttribute("data-cdelyes"); this._confirmDelChore = null; this._cmd("rota/chore/delete", { target: id }); return; }
+    if ((el = t("data-dupchore"))) { const src = this._state.chores.find((x) => x.id === el.getAttribute("data-dupchore")); if (src) { const copy = JSON.parse(JSON.stringify(src)); delete copy.id; copy.name = (src.name || "Chore") + " (copy)"; this._cmd("rota/chore/save", { chore: copy }); } return; }
     // ---- Chore editor ----
     if (t("data-cancel")) { this._editing = null; this._render(); return; }
     if (t("data-savechore")) { this._syncEditor(); const c = this._editing; c.checklist = (c.checklist || []).map((x) => x.trim()).filter(Boolean); this._editing = null; this._cmd("rota/chore/save", { chore: c }); return; }
@@ -528,6 +537,7 @@ function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (
 function initials(n) { return String(n || "").split(" ").map((x) => x[0]).join("").slice(0, 2).toUpperCase(); }
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 const TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+const COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 const enc = (s) => encodeURIComponent(String(s == null ? "" : s));
 const dec = (s) => decodeURIComponent(String(s || ""));
@@ -636,7 +646,9 @@ const STYLE = `<style>
   .crow:first-child { border-top:0; }
   .cmeta { flex:1; min-width:0; cursor:pointer; }
   .cmeta b { font-weight:550; font-size:15px; color: var(--primary-text-color); }
+  .cact { display:flex; align-items:center; gap:4px; flex:none; }
   .csub { font-size:12.5px; color: var(--secondary-text-color); margin-top:2px; }
+  .csub.danger { color: var(--error-color,#c0392b); }
   .cb { font-size:11.5px; font-weight:500; padding:1px 7px; border-radius:20px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
   .cb.ok { background: rgba(46,106,82,.12); color: var(--primary-color); }
   .scrim { position:fixed; inset:0; background: rgba(20,26,22,.42); z-index:8; }
