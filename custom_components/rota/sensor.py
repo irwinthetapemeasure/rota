@@ -52,6 +52,7 @@ class RotaTodaySensor(CoordinatorEntity[RotaCoordinator], SensorEntity):
             "current_daypart": d.get("current_daypart"),
             "day": d.get("day", []),
             "longterm": d.get("longterm", []),
+            "bonus": d.get("bonus", []),
             "points": d.get("points", {}),
             "points_reset": d.get("points_reset", "none"),
             "points_since": d.get("points_since"),

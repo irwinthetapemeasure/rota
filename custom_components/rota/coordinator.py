@@ -59,6 +59,7 @@ class RotaCoordinator(DataUpdateCoordinator):
 
         day = engine.day_items(data, on, today, dp_ids)
         longterm = engine.longterm_items(data, on, today)
+        bonus = engine.bonus_items(data, on, today)
         since = engine.points_period_start(settings, today)
         return {
             "date": on.isoformat(),
@@ -68,6 +69,7 @@ class RotaCoordinator(DataUpdateCoordinator):
             "current_daypart": engine.current_daypart(dayparts, now.strftime("%H:%M")),
             "day": day,
             "longterm": longterm,
+            "bonus": bonus,
             "count": len(day) + len(longterm),
             "points": engine.points_totals(data, since),
             "points_reset": settings.get("points_reset", "none"),
@@ -104,6 +106,13 @@ class RotaCoordinator(DataUpdateCoordinator):
 
     async def async_undo(self, ref: str, on: date, part: str | None = None) -> str | None:
         result = engine.undo(self.store.data, self._chore(ref), on, part)
+        await self._persist()
+        return result
+
+    async def async_toggle_check(
+        self, ref: str, on: date, index: int, part: str | None = None
+    ) -> list[int]:
+        result = engine.toggle_check(self.store.data, self._chore(ref), on, index, part)
         await self._persist()
         return result
 

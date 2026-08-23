@@ -115,7 +115,11 @@ class RotaCard extends HTMLElement {
 
   _subjects(items) {
     const seen = [];
-    for (const c of items) if (c.assignee && !seen.includes(c.assignee)) seen.push(c.assignee);
+    const add = (n) => { if (n && !seen.includes(n)) seen.push(n); };
+    for (const c of items) {
+      if (c.members && c.members.length) c.members.forEach(add);
+      else add(c.assignee);
+    }
     return seen;
   }
 
@@ -151,9 +155,10 @@ class RotaCard extends HTMLElement {
     this._pointsOn = !!a.points_on;
     this._candidates = a.candidates || [];
 
+    const bonus = a.bonus || [];
     const subjects = this._subjects([...day, ...longterm]);
     if (this._subject && !subjects.includes(this._subject)) this._subject = null;
-    const mine = (c) => !this._subject || c.assignee === this._subject;
+    const mine = (c) => !this._subject || c.assignee === this._subject || (c.members && c.members.includes(this._subject));
     const dayF = day.filter(mine);
     const ltF = longterm.filter(mine);
 
@@ -194,10 +199,11 @@ class RotaCard extends HTMLElement {
     }
 
     const ltHtml = ltF.length ? `<div class="sec">Long-term</div>${this._group(null, ltF, true)}` : "";
+    const bonusHtml = bonus.length ? `<div class="sec">Bonus — up for grabs</div>${this._group(null, bonus)}` : "";
     const confirmHtml = this._pending ? this._confirmBanner(dateStr) : "";
     const ptsHtml = this._pointsStrip(a);
 
-    root.innerHTML = `<ha-card>${bar}${ptsHtml}${confirmHtml}${picks}${dayHtml}${ltHtml}</ha-card>${STYLE}`;
+    root.innerHTML = `<ha-card>${bar}${ptsHtml}${confirmHtml}${picks}${dayHtml}${ltHtml}${bonusHtml}</ha-card>${STYLE}`;
     this._delegate();
   }
 
@@ -240,14 +246,26 @@ class RotaCard extends HTMLElement {
   _choreCard(c, longTerm) {
     const status = c.status || "todo";
     const pts = c.points ? ` · +${c.points}` : "";
-    const who = c.members && c.members.length ? (c.assignee || "") + " · " + c.members.join(", ") : (c.assignee || "");
+    const who = c.members && c.members.length ? (c.assignee || "") + " · " + c.members.join(", ")
+      : (c.bonus ? "Anyone" : (c.assignee || ""));
     const dueTxt = c.due_date ? "Due " + fmtDate(c.due_date) : c.due || "";
-    const meta = longTerm || c.floating
+    const checks = new Set(c.checklist_done || []);
+    const total = (c.checklist || []).length;
+    const prog = total ? ` · ${checks.size}/${total}` : "";
+    const meta = (longTerm || c.floating
       ? escapeHtml(who + (dueTxt ? " · " + dueTxt : ""))
-      : escapeHtml(who + (c.require_approval ? " · needs a check" : ""));
+      : escapeHtml(who + (c.require_approval ? " · needs a check" : ""))) + prog;
     const attrs = `data-chore="${enc(c.id)}" data-date="${enc(c.date || "")}" data-part="${enc(c.daypart || "")}"`;
     const crediting = this._crediting && this._crediting.chore === c.id
       && this._crediting.date === (c.date || "") && this._crediting.part === (c.daypart || "");
+    const checklistHtml = total && status !== "done"
+      ? `<div class="cklist">${c.checklist.map((label, i) => `<button class="ck ${checks.has(i) ? "on" : ""}" data-check="${i}" ${attrs}><span class="ckbox">${checks.has(i) ? "✓" : ""}</span><span>${escapeHtml(label)}</span></button>`).join("")}</div>`
+      : "";
+    // How completion credits points: a picker (steal / bonus) under All, else a
+    // fixed subject (the filtered person, or the per-person "everyone" instance).
+    const claimableByOne = ["person", "people", "crew", "bonus"].includes(c.assign);
+    const needpick = this._pointsOn && this._subject === null && claimableByOne && !c.everyone;
+    const defaultBy = this._subject ? this._subject : (c.everyone ? (c.assignee || "") : "");
     let btn, extra = "";
     if (status === "done") {
       const credit = c.done_by ? " · " + escapeHtml(c.done_by) : "";
@@ -262,9 +280,10 @@ class RotaCard extends HTMLElement {
       const chips = cands.map((n) => `<button class="doer" data-doer="${enc(n)}">${escapeHtml(n)}</button>`).join("");
       btn = `<div class="picker"><div class="pq">Who did it? — they get the ${c.points || 0} pts</div><div class="doers">${chips}</div><button class="pcancel" data-credit-cancel="1">Cancel</button></div>`;
     } else {
-      btn = `<button class="btn ${status === "overdue" ? "over" : "todo"}" data-act="done" ${attrs}>Mark done</button>`;
+      const doneAttrs = needpick ? 'data-needpick="1"' : `data-by="${enc(defaultBy)}"`;
+      btn = `<button class="btn ${status === "overdue" ? "over" : "todo"}" data-act="done" ${doneAttrs} ${attrs}>Mark done${c.bonus ? ` · +${c.points || 0}` : ""}</button>`;
     }
-    return `<div class="chore ${status}${crediting ? " crediting" : ""}"><div class="ch"><div class="nm">${escapeHtml(c.name)}</div><div class="meta">${meta}</div></div>${btn}${extra ? `<div class="extra">${extra}</div>` : ""}</div>`;
+    return `<div class="chore ${status}${crediting ? " crediting" : ""}${c.bonus ? " bonus" : ""}"><div class="ch"><div class="nm">${escapeHtml(c.name)}</div><div class="meta">${meta}</div></div>${checklistHtml}${btn}${extra ? `<div class="extra">${extra}</div>` : ""}</div>`;
   }
 
   _onClick(e) {
@@ -291,6 +310,18 @@ class RotaCard extends HTMLElement {
       return;
     }
     if (e.target.closest("[data-credit-cancel]")) { this._crediting = null; this._render(); return; }
+    // Tick / untick a checklist sub-item (progress only).
+    const check = e.target.closest("[data-check]");
+    if (check) {
+      const data = { chore: dec(check.getAttribute("data-chore")), index: parseInt(check.getAttribute("data-check"), 10) };
+      const date = dec(check.getAttribute("data-date"));
+      const part = dec(check.getAttribute("data-part"));
+      if (date) data.date = date;
+      if (part) data.part = part;
+      const p = this._hass.callService("rota", "toggle_check", data);
+      if (this._offset !== 0 && p && p.then) p.then(() => this._fetch());
+      return;
+    }
     const act = e.target.closest("[data-act]");
     if (act) {
       const action = act.getAttribute("data-act");
@@ -298,15 +329,15 @@ class RotaCard extends HTMLElement {
       const date = dec(act.getAttribute("data-date"));
       const part = dec(act.getAttribute("data-part"));
       if (action === "done") {
-        // With points on, an "All"-view completion asks who actually did it so
-        // anyone can do (and claim) another person's chore. Under a subject
-        // filter it auto-credits that subject.
-        if (this._pointsOn && this._subject === null) {
+        // Some completions ask "who did it?" (steal / bonus under the All view);
+        // others credit a fixed subject (the filtered person, or the per-person
+        // "everyone" instance, or a pair's members).
+        if (act.getAttribute("data-needpick")) {
           this._crediting = { chore, date, part };
           this._render();
           return;
         }
-        this._finishDone(act, chore, date, part, this._subject || null);
+        this._finishDone(act, chore, date, part, dec(act.getAttribute("data-by") || "") || null);
         return;
       }
       // Guard approve on a day that isn't today.
@@ -420,6 +451,16 @@ const STYLE = `<style>
   .doer:hover { background: var(--primary-color); color: var(--text-primary-color,#fff); }
   .pcancel { align-self:center; height:34px; padding:0 14px; border-radius:10px; border:1px solid var(--divider-color); background:transparent;
              color: var(--secondary-text-color); font:inherit; font-size:13px; cursor:pointer; }
+  .cklist { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+  .ck { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--divider-color); border-radius:10px;
+        background: var(--card-background-color); color: var(--primary-text-color); font:inherit; font-size:14px; text-align:left; cursor:pointer; }
+  .ck .ckbox { width:20px; height:20px; border-radius:6px; border:1.5px solid var(--divider-color); display:grid; place-items:center;
+               font-size:13px; font-weight:700; color: var(--text-primary-color,#fff); flex:none; }
+  .ck.on { color: var(--secondary-text-color); }
+  .ck.on .ckbox { background: var(--primary-color); border-color: var(--primary-color); }
+  .ck.on span:last-child { text-decoration: line-through; }
+  .chore.bonus { border-color: var(--warning-color, #b4791a); }
+  .chore.bonus .nm::before { content:"★ "; color:#E0A83E; }
   .extra { margin-top:10px; display:flex; justify-content:center; }
   .approve { height:40px; padding:0 16px; border-radius:10px; border:1px solid var(--primary-color); background: transparent; color: var(--primary-color); font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
   .undo { height:34px; padding:0 14px; border-radius:10px; border:1px solid var(--divider-color); background: transparent; color: var(--secondary-text-color); font:inherit; font-size:13px; cursor:pointer; }

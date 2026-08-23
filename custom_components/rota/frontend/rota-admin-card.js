@@ -189,6 +189,7 @@ class RotaAdminCard extends HTMLElement {
     if (s.points && c.points) badges.push(`<span class="cb">${c.points} pts</span>`);
     if (s.approvals && c.require_approval) badges.push(`<span class="cb ok">approval</span>`);
     if (c.dayparts && c.dayparts.length) badges.push(`<span class="cb">${c.dayparts.length}×/day</span>`);
+    if (c.checklist && c.checklist.length) badges.push(`<span class="cb">${c.checklist.length}-item list</span>`);
     return `<div class="crow"><div class="cmeta" data-editchore="${c.id}"><b>${escapeHtml(c.name)}</b><div class="csub">${freqLabel(c)} · ${escapeHtml(assignLabel(c))} ${badges.join(" ")}</div></div>
       <button class="rm" data-delchore="${c.id}" aria-label="Delete">${TRASH}</button></div>`;
   }
@@ -214,10 +215,17 @@ class RotaAdminCard extends HTMLElement {
         ${c.frequency === "weekly" && mode === "floating" ? `<div class="note">Due by the end of each week (Sunday).</div>` : ""}
         ${c.frequency === "monthly" ? `<div class="frow"><span>${mode === "scheduled" ? "Runs on day" : "Due by day"}</span><input id="ce-dom" class="in sm" style="width:64px" value="${c.day_of_month || 1}"><span style="font-size:12px">of the month</span></div>` : ""}
         ${(s.dayparts || []).length && ["daily", "every_n", undefined].includes(c.frequency) ? `<label>Runs at (day sections)</label><div class="psel">${dpSel}</div><div class="note">Pick sections to repeat this chore through the day (e.g. dishes after each meal). Leave empty for once a day.${s.sections ? "" : " Turn on “Split the day into sections” in Settings to see the tabs on the tablet."}</div>` : ""}
-        <label>Who does it</label>${seg("assign", [["crew", "A crew"], ["people", "Rotate people"], ["person", "One person"]], c.assign || "person")}
+        <label>Who does it</label>
+        <select id="ce-assign" class="in" data-cassign style="width:100%">${[["person", "One person"], ["people", "Rotate people"], ["pair", "A pair (together)"], ["crew", "A crew"], ["everyone", "Everyone (each their own)"], ["bonus", "Bonus — up for grabs"]].map(([v, l]) => `<option value="${v}" ${(c.assign || "person") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         ${c.assign === "crew" ? `<div class="note">Whole crew does it together; crews shuffle weekly.</div><div class="frow"><span>Rotation offset</span><input id="ce-offset" class="in sm" style="width:64px" value="${c.offset || 0}"><span style="font-size:12px">chores with the same offset move to the same crew each week</span></div>` : ""}
         ${c.assign === "people" ? `<div class="psel">${peopleSel}</div>${this._upTodayRow(c)}${this._weekPreview(c)}` : ""}
+        ${c.assign === "pair" ? `<div class="note">These people do it together — everyone picked gets the points.</div><div class="psel">${peopleSel}</div>` : ""}
         ${c.assign === "person" ? `<select id="ce-person" class="in" style="width:100%">${volNames.map((n) => `<option ${c.person === n ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select>` : ""}
+        ${c.assign === "everyone" ? `<div class="note">Every active person gets their own copy each day.</div>` : ""}
+        ${c.assign === "bonus" ? `<div class="note">No fixed owner — anyone can claim it from the tablet for the points.</div>` : ""}
+        <label>Checklist (optional)</label>
+        <div class="cked">${(c.checklist || []).map((it, i) => `<div class="ckrow"><input class="in sm" data-ckitem="${i}" value="${escapeHtml(it)}" placeholder="Sub-task" style="flex:1"><button class="rm" data-ckdel="${i}" aria-label="Remove">${TRASH}</button></div>`).join("")}<button class="btn" data-ckadd="1" style="margin-top:6px"><span>+</span> Add item</button></div>
+        <div class="note">Sub-tasks shown (and tickable) on the tablet — great for zone chores like a bathroom clean.</div>
         ${s.points ? `<label>Points</label><input id="ce-points" class="in sm" style="width:80px" value="${c.points || 0}">` : ""}
         ${s.approvals ? `<div class="drow"><div><b>Require approval</b><div class="sub">A lead checks before it counts.</div></div><button class="sw ${c.require_approval ? "on" : ""}" data-capprove="1"></button></div>` : ""}
       </div>
@@ -237,6 +245,8 @@ class RotaAdminCard extends HTMLElement {
     if ((x = g("ce-dom")) !== undefined) c.day_of_month = parseInt(x, 10) || 1;
     if ((x = g("ce-offset")) !== undefined) c.offset = parseInt(x, 10) || 0;
     if ((x = g("ce-person")) !== undefined) c.person = x;
+    const items = [...sr.querySelectorAll("[data-ckitem]")];
+    if (items.length) c.checklist = items.map((el) => el.value);
   }
 
   _delegate() {
@@ -447,11 +457,13 @@ class RotaAdminCard extends HTMLElement {
     if ((el = t("data-delchore"))) { this._editing = null; this._cmd("rota/chore/delete", { target: el.getAttribute("data-delchore") }); return; }
     // ---- Chore editor ----
     if (t("data-cancel")) { this._editing = null; this._render(); return; }
-    if (t("data-savechore")) { this._syncEditor(); const c = this._editing; this._editing = null; this._cmd("rota/chore/save", { chore: c }); return; }
+    if (t("data-savechore")) { this._syncEditor(); const c = this._editing; c.checklist = (c.checklist || []).map((x) => x.trim()).filter(Boolean); this._editing = null; this._cmd("rota/chore/save", { chore: c }); return; }
     if ((el = t("data-segval"))) { this._syncEditor(); const seg = el.closest("[data-seg]").getAttribute("data-seg"); const field = { freq: "frequency", assign: "assign", mode: "mode" }[seg] || seg; this._editing[field] = el.getAttribute("data-segval"); this._render(); return; }
     if ((el = t("data-cdp"))) { this._syncEditor(); this._toggleArr("dayparts", el.getAttribute("data-cdp")); this._render(); return; }
     if ((el = t("data-cday"))) { this._syncEditor(); this._toggleArr("days", el.getAttribute("data-cday")); this._render(); return; }
     if ((el = t("data-cperson"))) { this._syncEditor(); this._toggleArr("people", dec(el.getAttribute("data-cperson"))); this._render(); return; }
+    if (t("data-ckadd")) { this._syncEditor(); this._editing.checklist = [...(this._editing.checklist || []), ""]; this._render(); return; }
+    if ((el = t("data-ckdel"))) { this._syncEditor(); const i = +el.getAttribute("data-ckdel"); this._editing.checklist = (this._editing.checklist || []).filter((_, j) => j !== i); this._render(); return; }
     if (t("data-capprove")) { this._syncEditor(); this._editing.require_approval = !this._editing.require_approval; this._render(); return; }
   }
 
@@ -470,6 +482,7 @@ class RotaAdminCard extends HTMLElement {
 
   _onChange(e) {
     const el = e.target;
+    if (el.hasAttribute("data-cassign")) { this._syncEditor(); this._editing.assign = el.value; this._render(); return; }
     if (el.hasAttribute("data-cupnow")) {
       this._syncEditor();
       const c = this._editing, people = c.people || [], n = people.length;
@@ -538,6 +551,9 @@ function freqLabel(c) {
 function assignLabel(c) {
   if (c.assign === "crew") return "Crew (rotates weekly)";
   if (c.assign === "people") return "Rotate: " + (c.people || []).join(", ");
+  if (c.assign === "pair") return "Together: " + (c.people || []).join(" & ");
+  if (c.assign === "everyone") return "Everyone";
+  if (c.assign === "bonus") return "Bonus — up for grabs";
   return "Only " + (c.person || "—");
 }
 
@@ -639,6 +655,8 @@ const STYLE = `<style>
   .pchip { border:1px solid var(--divider-color); background: var(--card-background-color); border-radius:20px; padding:5px 12px; font:inherit; font-size:13px; cursor:pointer; color: var(--secondary-text-color); }
   .pchip.on { background: rgba(46,106,82,.12); border-color: var(--primary-color); color: var(--primary-color); font-weight:500; }
   .note { font-size:12.5px; color: var(--secondary-text-color); margin-top:8px; }
+  .cked { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+  .ckrow { display:flex; align-items:center; gap:6px; }
   .drow { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
   .drow b { font-weight:500; font-size:14.5px; color: var(--primary-text-color); }
   .drow .sub { font-size:12.5px; color: var(--secondary-text-color); margin-top:2px; }

@@ -107,8 +107,13 @@ def assignee(chore: dict[str, Any], on: date) -> str | None:
             return None
         idx = occurrence_index(chore, on) + int(chore.get("offset", 0) or 0)
         return people[idx % len(people)]
+    if assign == "pair":
+        # A fixed set of people who do it together (a light-weight crew).
+        return " & ".join(chore.get("people") or []) or None
     if assign == "crew":
         return chore.get("crew")
+    # "everyone" (expanded per person) and "bonus" (up for grabs) have no single
+    # rostered owner.
     return None
 
 
@@ -202,8 +207,8 @@ def floating_status(data: dict[str, Any], chore: dict[str, Any], on: date, today
     """Status for a floating chore, keyed to its period (one completion/period).
     Overdue only once its due date has actually passed."""
     occ = data.get("occurrences", {}).get(occ_key(chore["id"], period_anchor(chore, on)))
-    if occ:
-        return occ.get("status", "todo")
+    if occ and occ.get("status"):
+        return occ["status"]
     return "overdue" if floating_due(chore, on) < today else "todo"
 
 
@@ -262,8 +267,8 @@ def resolve_status(
 ) -> str:
     """Derive an occurrence's status: done · pending · todo · overdue."""
     occ = data.get("occurrences", {}).get(occ_key(chore["id"], on, part))
-    if occ:
-        return occ.get("status", "todo")
+    if occ and occ.get("status"):
+        return occ["status"]
     return "overdue" if on < today else "todo"
 
 
@@ -273,18 +278,32 @@ def mark_done(
     """Mark an occurrence done — or pending, if it needs a lead's approval."""
     settings = data.get("settings", {})
     key = occ_key(chore["id"], on, part)
+    occ = data.setdefault("occurrences", {}).setdefault(key, {})
+    checks = occ.get("checklist_done") or []  # preserve any ticked sub-items
     needs_approval = bool(chore.get("require_approval")) and bool(settings.get("approvals"))
     if needs_approval:
-        data.setdefault("occurrences", {})[key] = {"status": "pending", "done_by": by, "ts": ts}
+        data["occurrences"][key] = {"status": "pending", "done_by": by, "ts": ts, "checklist_done": checks}
         return "pending"
-    data.setdefault("occurrences", {})[key] = {
+    data["occurrences"][key] = {
         "status": "done",
         "done_by": by,
         "approved_by": by,
         "ts": ts,
+        "checklist_done": checks,
     }
     _post_points(data, chore, on, ts, part, subject=by)
     return "done"
+
+
+def toggle_check(data: dict[str, Any], chore: dict[str, Any], on: date, index: int, part: str | None = None) -> list[int]:
+    """Toggle one checklist sub-item on an occurrence (progress only — it does not
+    complete the chore). Returns the new list of ticked indices."""
+    key = occ_key(chore["id"], on, part)
+    occ = data.setdefault("occurrences", {}).setdefault(key, {})
+    done = set(occ.get("checklist_done") or [])
+    done.discard(index) if index in done else done.add(index)
+    occ["checklist_done"] = sorted(done)
+    return occ["checklist_done"]
 
 
 def approve(
@@ -316,23 +335,30 @@ def _post_points(
     if not settings.get("points") or not chore.get("points"):
         return
     _remove_points(data, chore, on, part)  # keep it idempotent — never double-post
-    # Credit the actual doer when one is given (kiosk "steal" — someone other than
-    # the rostered assignee did it), else fall back to the schedule's assignee.
+    # Who earns the points:
+    #  - an explicit doer (kiosk "steal", or a per-person "everyone" chore) wins;
+    #  - a pair credits every member;
+    #  - otherwise the schedule's assignee.
     if subject:
-        who = subject
+        subjects = [subject]
+    elif chore.get("assign") == "pair":
+        subjects = list(chore.get("people") or [])
     else:
         period = period_anchor(chore, on) if chore_mode(chore) == "floating" else on
         who = resolve_subject(data, chore, period)
-    data.setdefault("points_log", []).append(
-        {
-            "key": occ_key(chore["id"], on, part),
-            "subject": who,
-            "chore": chore["id"],
-            "points": chore.get("points", 0),
-            "date": on.isoformat(),
-            "ts": ts,
-        }
-    )
+        subjects = [who] if who else []
+    key = occ_key(chore["id"], on, part)
+    for who in subjects:
+        data.setdefault("points_log", []).append(
+            {
+                "key": key,
+                "subject": who,
+                "chore": chore["id"],
+                "points": chore.get("points", 0),
+                "date": on.isoformat(),
+                "ts": ts,
+            }
+        )
 
 
 def _remove_points(data: dict[str, Any], chore: dict[str, Any], on: date, part: str | None = None) -> None:
@@ -450,7 +476,8 @@ def credit_candidates(data: dict[str, Any]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for v in data.get("volunteers", []):
-        if v.get("active") and v.get("solo") and v.get("name") and v["name"] not in seen:
+        # active individuals — anyone not folded into a crew
+        if v.get("active") and not v.get("crew_id") and v.get("name") and v["name"] not in seen:
             seen.add(v["name"])
             out.append(v["name"])
     for c in active_crews(data):
@@ -500,6 +527,9 @@ def _resolve_who(data: dict[str, Any], chore: dict[str, Any], on: date) -> tuple
             "crew": {"id": crew["id"], "name": crew.get("name"), "color": crew.get("color")},
             "members": members,
         }
+    if chore.get("assign") == "pair":
+        people = list(chore.get("people") or [])
+        return (" & ".join(people) or None), {"members": people, "pair": True}
     return assignee(chore, on), {}
 
 
@@ -515,6 +545,7 @@ def _item(chore: dict[str, Any], who: str | None, status: str, on: date, part: s
         "assignee": who,
         "points": chore.get("points", 0),
         "require_approval": chore.get("require_approval", False),
+        "checklist": list(chore.get("checklist") or []),
         "daypart": part,
         "date": on.isoformat(),
         "status": status,
@@ -524,17 +555,37 @@ def _item(chore: dict[str, Any], who: str | None, status: str, on: date, part: s
     return item
 
 
-def _occ_done_by(data: dict[str, Any], chore: dict[str, Any], on: date, part: str | None = None) -> str | None:
-    occ = data.get("occurrences", {}).get(occ_key(chore["id"], on, part))
-    return occ.get("done_by") if occ else None
+def _occ(data: dict[str, Any], chore: dict[str, Any], on: date, part: str | None = None) -> dict[str, Any] | None:
+    return data.get("occurrences", {}).get(occ_key(chore["id"], on, part))
+
+
+def _stamp(data: dict[str, Any], item: dict[str, Any], chore: dict[str, Any], on: date, part: str | None = None) -> dict[str, Any]:
+    """Attach the occurrence-level extras (done_by, ticked checklist items)."""
+    occ = _occ(data, chore, on, part)
+    item["done_by"] = occ.get("done_by") if occ else None
+    item["checklist_done"] = list(occ.get("checklist_done") or []) if occ else []
+    return item
+
+
+def _active_people(data: dict[str, Any]) -> list[str]:
+    """Active individuals (for 'everyone' chores) — anyone active not folded into
+    a crew."""
+    return [
+        v.get("name")
+        for v in data.get("volunteers", [])
+        if v.get("active") and not v.get("crew_id") and v.get("name")
+    ]
 
 
 def day_items(data: dict[str, Any], on: date, today: date, daypart_ids: list[str]) -> list[dict[str, Any]]:
     """The day schedule for ``on``: scheduled chores due that day (expanded per
-    daypart) plus any floating chores that have come due."""
+    daypart, and per person for 'everyone' chores) plus floating chores that
+    have come due. Bonus chores are handled separately (see ``bonus_items``)."""
     out: list[dict[str, Any]] = []
     for chore in data.get("chores", []):
-        if not chore.get("active", True) or not in_day_view(chore, on, today):
+        if not chore.get("active", True) or chore.get("assign") == "bonus":
+            continue
+        if not in_day_view(chore, on, today):
             continue
         if chore_mode(chore) == "floating":
             # keyed to the period so completing it here or in long-term agrees
@@ -544,20 +595,35 @@ def day_items(data: dict[str, Any], on: date, today: date, daypart_ids: list[str
             item["due"] = due_label(chore)
             item["due_date"] = floating_due(chore, on).isoformat()
             item["floating"] = True
-            item["done_by"] = _occ_done_by(data, chore, anchor)
-            out.append(item)
+            out.append(_stamp(data, item, chore, anchor))
+            continue
+        if chore.get("assign") == "everyone":
+            # one instance per active person, keyed by that person
+            for person in _active_people(data):
+                item = _item(chore, person, resolve_status(data, chore, on, today, person), on, person, {"everyone": True})
+                out.append(_stamp(data, item, chore, on, person))
             continue
         who, extra = _resolve_who(data, chore, on)
         parts = [p for p in (chore.get("dayparts") or []) if p in daypart_ids]
         if parts:
             for part in parts:
                 item = _item(chore, who, resolve_status(data, chore, on, today, part), on, part, extra)
-                item["done_by"] = _occ_done_by(data, chore, on, part)
-                out.append(item)
+                out.append(_stamp(data, item, chore, on, part))
         else:
             item = _item(chore, who, resolve_status(data, chore, on, today), on, None, extra)
-            item["done_by"] = _occ_done_by(data, chore, on)
-            out.append(item)
+            out.append(_stamp(data, item, chore, on))
+    return out
+
+
+def bonus_items(data: dict[str, Any], on: date, today: date) -> list[dict[str, Any]]:
+    """Up-for-grabs bonus chores — no fixed owner; whoever does one claims the
+    points via the tablet's 'who did it?' picker. Always available, once a day."""
+    out: list[dict[str, Any]] = []
+    for chore in data.get("chores", []):
+        if not chore.get("active", True) or chore.get("assign") != "bonus":
+            continue
+        item = _item(chore, None, resolve_status(data, chore, on, today), on, None, {"bonus": True})
+        out.append(_stamp(data, item, chore, on))
     return out
 
 
@@ -565,15 +631,15 @@ def longterm_items(data: dict[str, Any], on: date, today: date | None = None) ->
     """Floating chores not yet due this period — always shown until their due date."""
     out: list[dict[str, Any]] = []
     for chore in data.get("chores", []):
-        if not chore.get("active", True) or not in_longterm(chore, on):
+        if not chore.get("active", True) or chore.get("assign") == "bonus" or not in_longterm(chore, on):
             continue
         anchor = period_anchor(chore, on)
         occ = data.get("occurrences", {}).get(occ_key(chore["id"], anchor))
-        status = occ.get("status", "todo") if occ else "todo"
+        status = occ.get("status") or "todo" if occ else "todo"
         who, extra = _resolve_who(data, chore, anchor)
         item = _item(chore, who, status, anchor, None, extra)
         item["due"] = due_label(chore)
         item["due_date"] = floating_due(chore, on).isoformat()
-        item["done_by"] = occ.get("done_by") if occ else None
+        _stamp(data, item, chore, anchor)
         out.append(item)
     return out

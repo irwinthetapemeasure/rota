@@ -74,3 +74,36 @@ undo:
       description: The occurrence date. Defaults to today.
       selector:
         date:
+
+toggle_check:
+  name: Toggle checklist item
+  description: >-
+    Tick or untick one sub-task on a chore's occurrence (progress only — it does
+    not complete the chore).
+  fields:
+    chore:
+      name: Chore
+      description: Chore id or name.
+      required: true
+      example: clean_bathroom
+      selector:
+        text:
+    index:
+      name: Item index
+      description: Zero-based index of the checklist item to toggle.
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          mode: box
+    date:
+      name: Date
+      description: The occurrence date. Defaults to today.
+      selector:
+        date:
+    part:
+      name: Daypart / person
+      description: The daypart id, or the person for an "everyone" chore.
+      selector:
+        text:

@@ -20,12 +20,22 @@ SERVICE_MARK_DONE = "mark_done"
 SERVICE_APPROVE = "approve"
 SERVICE_UNDO = "undo"
 SERVICE_REMIND_NOW = "remind_now"
+SERVICE_TOGGLE_CHECK = "toggle_check"
 
 _SCHEMA = vol.Schema(
     {
         vol.Required("chore"): cv.string,
         vol.Optional("date"): cv.date,
         vol.Optional("by"): cv.string,
+        vol.Optional("part"): cv.string,
+    }
+)
+
+_CHECK_SCHEMA = vol.Schema(
+    {
+        vol.Required("chore"): cv.string,
+        vol.Required("index"): vol.Coerce(int),
+        vol.Optional("date"): cv.date,
         vol.Optional("part"): cv.string,
     }
 )
@@ -56,7 +66,13 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def remind_now(call: ServiceCall) -> None:
         await _coord().async_fire_reminders()
 
+    async def toggle_check(call: ServiceCall) -> None:
+        await _coord().async_toggle_check(
+            call.data["chore"], _on(call), call.data["index"], call.data.get("part")
+        )
+
     hass.services.async_register(DOMAIN, SERVICE_MARK_DONE, mark_done, schema=_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_APPROVE, approve, schema=_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_UNDO, undo, schema=_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_REMIND_NOW, remind_now)
+    hass.services.async_register(DOMAIN, SERVICE_TOGGLE_CHECK, toggle_check, schema=_CHECK_SCHEMA)
