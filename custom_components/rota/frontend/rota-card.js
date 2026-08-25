@@ -124,6 +124,18 @@ class RotaCard extends HTMLElement {
   }
 
   _render() {
+    try {
+      this._renderSafe();
+    } catch (e) {
+      console.error("rota-card render error", e);
+      if (this.shadowRoot) {
+        const msg = String((e && e.stack) || e).replace(/[<&>]/g, "");
+        this.shadowRoot.innerHTML = `<ha-card style="padding:16px"><div style="font-weight:600;margin-bottom:8px">Rota card error (v${CARD_VERSION})</div><pre style="white-space:pre-wrap;font-size:12px;line-height:1.4;color:#c0392b;margin:0">${msg}</pre></ha-card>`;
+      }
+    }
+  }
+
+  _renderSafe() {
     if (!this._hass) return;
     const root = this.shadowRoot;
     const isToday = this._offset === 0;
@@ -475,6 +487,8 @@ const STYLE = `<style>
   .wok { height:38px; padding:0 16px; border-radius:10px; border:0; background: var(--warning-color, #b4791a); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
 </style>`;
 
-customElements.define("rota-card", RotaCard);
+const CARD_VERSION = "0.2.2";
+if (!customElements.get("rota-card")) customElements.define("rota-card", RotaCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet — day nav, dayparts, long-term chores, approvals." });
+console.info(`%c ROTA-CARD %c v${CARD_VERSION} `, "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");

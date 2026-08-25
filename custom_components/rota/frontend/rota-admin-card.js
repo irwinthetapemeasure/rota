@@ -695,6 +695,7 @@ const STYLE = `<style>
   .legend2 .ld i { width:10px; height:10px; border-radius:3px; }
 </style>`;
 
-customElements.define("rota-admin-card", RotaAdminCard);
+if (!customElements.get("rota-admin-card")) customElements.define("rota-admin-card", RotaAdminCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-admin-card", name: "Rota Admin", description: "Manage Rota volunteers, crews, chores, and settings." });
+console.info("%c ROTA-ADMIN-CARD %c v0.2.2 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
