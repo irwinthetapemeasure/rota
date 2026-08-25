@@ -275,8 +275,11 @@ class RotaCard extends HTMLElement {
       : "";
     // How completion credits points: a picker (steal / bonus) under All, else a
     // fixed subject (the filtered person, or the per-person "everyone" instance).
-    const claimableByOne = ["person", "people", "crew", "bonus"].includes(c.assign);
-    const needpick = this._pointsOn && this._subject === null && claimableByOne && !c.everyone;
+    // Under the All view, anyone can claim a chore they did — so ask "who did
+    // it?". This covers person / people / crew / bonus AND each "everyone"
+    // instance (so Joe can steal Travis's Make Bed). Pairs are the exception:
+    // they credit their whole member list, so no single-doer picker.
+    const needpick = this._pointsOn && this._subject === null && c.assign !== "pair";
     const defaultBy = this._subject ? this._subject : (c.everyone ? (c.assignee || "") : "");
     let btn, extra = "";
     if (status === "done") {
@@ -487,7 +490,7 @@ const STYLE = `<style>
   .wok { height:38px; padding:0 16px; border-radius:10px; border:0; background: var(--warning-color, #b4791a); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
 </style>`;
 
-const CARD_VERSION = "0.2.2";
+const CARD_VERSION = "0.2.3";
 if (!customElements.get("rota-card")) customElements.define("rota-card", RotaCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet — day nav, dayparts, long-term chores, approvals." });
