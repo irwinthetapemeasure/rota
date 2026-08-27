@@ -27,7 +27,7 @@ class RotaAdminCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     // Only load once. The admin card's data comes from the rota websocket
-    // state, not hass entities — re-rendering on every hass update would nuke
+    // state, not hass entities &mdash; re-rendering on every hass update would nuke
     // whatever input the user is typing in.
     if (first) this._load();
   }
@@ -98,7 +98,7 @@ class RotaAdminCard extends HTMLElement {
       const idx = this._occIndex(c, monday + i) + off;
       return `<b>${names[i]}</b> ${escapeHtml(people[((idx % n) + n) % n])}`;
     });
-    return `<div class="note">This week: ${parts.join(" · ")}</div>`;
+    return `<div class="note">This week: ${parts.join(" &middot; ")}</div>`;
   }
 
   // "Up today" picker for a people-rotation chore. Choosing a person sets the
@@ -117,7 +117,7 @@ class RotaAdminCard extends HTMLElement {
     if (!this._hass) return;
     const root = this.shadowRoot;
     if (!this._state) {
-      root.innerHTML = `<ha-card><div class="pad">${this._err ? "Couldn’t reach Rota." : "Loading…"}</div></ha-card>${STYLE}`;
+      root.innerHTML = `<ha-card><div class="pad">${this._err ? "Couldn&rsquo;t reach Rota." : "Loading&hellip;"}</div></ha-card>${STYLE}`;
       return;
     }
     const tabs = [["week", "This week"], ["chores", "Chores"], ["volunteers", "Volunteers"], ["points", "Points"], ["settings", "Settings"]]
@@ -146,9 +146,9 @@ class RotaAdminCard extends HTMLElement {
     const legend = s.experience
       ? `<div class="legend"><span class="ld"><i style="background:#2e6a52"></i>Lead</span><span class="ld"><i style="background:#4C7C9C"></i>Returning</span><span class="ld"><i style="background:#9A6810"></i>New</span><span class="hint" style="margin-left:auto">Experience is admin-only. Counts just help you decide.</span></div>`
       : "";
-    return `<div class="quick"><span class="hint"><b>You</b> build the crews — drag a volunteer in, or click one then a crew. ${active.length} active, ${pool.length} unassigned.</span></div>
+    return `<div class="quick"><span class="hint"><b>You</b> build the crews &mdash; drag a volunteer in, or click one then a crew. ${active.length} active, ${pool.length} unassigned.</span></div>
       <div class="pool" data-drop="pool"><div class="ph">Not yet assigned <b>${pool.length}</b></div>
-        <div class="chips">${pool.length ? pool.map((v) => this._chip(v, true)).join("") : '<span class="hint" style="font-style:italic">Everyone’s placed.</span>'}</div></div>
+        <div class="chips">${pool.length ? pool.map((v) => this._chip(v, true)).join("") : '<span class="hint" style="font-style:italic">Everyone&rsquo;s placed.</span>'}</div></div>
       <div class="board">${board}<button class="addcrew" data-addcrew="1">+ Add crew</button></div>${legend}`;
   }
 
@@ -162,9 +162,9 @@ class RotaAdminCard extends HTMLElement {
       if (n("returning")) parts.push(`<span class="ld"><i style="background:#4C7C9C"></i>${n("returning")} returning</span>`);
       if (n("new")) parts.push(`<span class="ld"><i style="background:#9A6810"></i>${n("new")} new</span>`);
       if (!n("lead") && m.length) parts.push('<span class="cwarn">no lead yet</span>');
-      mix = m.length ? parts.join("") : "Empty — drop volunteers here";
+      mix = m.length ? parts.join("") : "Empty &mdash; drop volunteers here";
     } else {
-      mix = m.length ? `${m.length} on crew` : "Empty — drop volunteers here";
+      mix = m.length ? `${m.length} on crew` : "Empty &mdash; drop volunteers here";
     }
     return `<div class="crew" data-drop="${c.id}"><div class="crewhd"><span class="cdot" style="background:${c.color}"></span><b>${escapeHtml(c.name)}</b><span class="cn">${m.length}</span><button class="rm" data-rmcrew="${c.id}" aria-label="Remove crew">${X}</button></div>
       <div class="cmix">${mix}</div><div class="crewbody">${m.map((v) => this._chip(v, false)).join("")}</div></div>`;
@@ -193,9 +193,9 @@ class RotaAdminCard extends HTMLElement {
     if (!["daily", "every_n"].includes(c.frequency || "daily")) badges.push(`<span class="cb">${(c.mode || "floating") === "scheduled" ? "Scheduled" : "Floating"}</span>`);
     if (s.points && c.points) badges.push(`<span class="cb">${c.points} pts</span>`);
     if (s.approvals && c.require_approval) badges.push(`<span class="cb ok">approval</span>`);
-    if (c.dayparts && c.dayparts.length) badges.push(`<span class="cb">${c.dayparts.length}×/day</span>`);
+    if (c.dayparts && c.dayparts.length) badges.push(`<span class="cb">${c.dayparts.length}&times;/day</span>`);
     if (c.checklist && c.checklist.length) badges.push(`<span class="cb">${c.checklist.length}-item list</span>`);
-    return `<div class="crow"><div class="cmeta" data-editchore="${c.id}"><b>${escapeHtml(c.name)}</b><div class="csub">${freqLabel(c)} · ${escapeHtml(assignLabel(c))} ${badges.join(" ")}</div></div>
+    return `<div class="crow"><div class="cmeta" data-editchore="${c.id}"><b>${escapeHtml(c.name)}</b><div class="csub">${freqLabel(c)} &middot; ${escapeHtml(assignLabel(c))} ${badges.join(" ")}</div></div>
       <div class="cact"><button class="rm" data-dupchore="${c.id}" aria-label="Duplicate">${COPY}</button>
       <button class="rm" data-delchore="${c.id}" aria-label="Delete">${TRASH}</button></div></div>`;
   }
@@ -216,22 +216,22 @@ class RotaAdminCard extends HTMLElement {
         <label>Name</label><input id="ce-name" class="in" value="${escapeHtml(c.name || "")}" placeholder="e.g. Wash breakfast dishes" style="width:100%">
         <label>Schedule</label>${seg("freq", [["daily", "Daily"], ["every_n", "Every N days"], ["weekly", "Weekly"], ["monthly", "Monthly"]], c.frequency || "daily")}
         ${c.frequency === "every_n" ? `<div class="frow"><span>Every</span><input id="ce-interval" class="in sm" style="width:64px" value="${c.interval || 2}"><span>days</span></div>` : ""}
-        ${canType ? `<label>Type</label>${seg("mode", [["scheduled", "Scheduled"], ["floating", "Floating"]], mode)}<div class="note">${mode === "scheduled" ? "Pinned to set days — appears in the daily list only on those days." : "Flexible timing — sits in Long-term until its due day, then drops into the daily list."}</div>` : ""}
+        ${canType ? `<label>Type</label>${seg("mode", [["scheduled", "Scheduled"], ["floating", "Floating"]], mode)}<div class="note">${mode === "scheduled" ? "Pinned to set days &mdash; appears in the daily list only on those days." : "Flexible timing &mdash; sits in Long-term until its due day, then drops into the daily list."}</div>` : ""}
         ${c.frequency === "weekly" && mode === "scheduled" ? `<label>On these days</label><div class="days">${["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => `<button class="pchip ${(c.days || []).includes(d) ? "on" : ""}" data-cday="${d}">${cap(d[0])}</button>`).join("")}</div>` : ""}
         ${c.frequency === "weekly" && mode === "floating" ? `<div class="note">Due by the end of each week (Sunday).</div>` : ""}
         ${c.frequency === "monthly" ? `<div class="frow"><span>${mode === "scheduled" ? "Runs on day" : "Due by day"}</span><input id="ce-dom" class="in sm" style="width:64px" value="${c.day_of_month || 1}"><span style="font-size:12px">of the month</span></div>` : ""}
-        ${(s.dayparts || []).length && ["daily", "every_n", undefined].includes(c.frequency) ? `<label>Runs at (day sections)</label><div class="psel">${dpSel}</div><div class="note">Pick sections to repeat this chore through the day (e.g. dishes after each meal). Leave empty for once a day.${s.sections ? "" : " Turn on “Split the day into sections” in Settings to see the tabs on the tablet."}</div>` : ""}
+        ${(s.dayparts || []).length && ["daily", "every_n", undefined].includes(c.frequency) ? `<label>Runs at (day sections)</label><div class="psel">${dpSel}</div><div class="note">Pick sections to repeat this chore through the day (e.g. dishes after each meal). Leave empty for once a day.${s.sections ? "" : " Turn on &ldquo;Split the day into sections&rdquo; in Settings to see the tabs on the tablet."}</div>` : ""}
         <label>Who does it</label>
-        <select id="ce-assign" class="in" data-cassign style="width:100%">${[["person", "One person"], ["people", "Rotate people"], ["pair", "A pair (together)"], ["crew", "A crew"], ["everyone", "Everyone (each their own)"], ["bonus", "Bonus — up for grabs"]].map(([v, l]) => `<option value="${v}" ${(c.assign || "person") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <select id="ce-assign" class="in" data-cassign style="width:100%">${[["person", "One person"], ["people", "Rotate people"], ["pair", "A pair (together)"], ["crew", "A crew"], ["everyone", "Everyone (each their own)"], ["bonus", "Bonus &mdash; up for grabs"]].map(([v, l]) => `<option value="${v}" ${(c.assign || "person") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         ${c.assign === "crew" ? `<div class="note">Whole crew does it together; crews shuffle weekly.</div><div class="frow"><span>Rotation offset</span><input id="ce-offset" class="in sm" style="width:64px" value="${c.offset || 0}"><span style="font-size:12px">chores with the same offset move to the same crew each week</span></div>` : ""}
         ${c.assign === "people" ? `<div class="psel">${peopleSel}</div>${this._upTodayRow(c)}${this._weekPreview(c)}` : ""}
-        ${c.assign === "pair" ? `<div class="note">These people do it together — everyone picked gets the points.</div><div class="psel">${peopleSel}</div>` : ""}
+        ${c.assign === "pair" ? `<div class="note">These people do it together &mdash; everyone picked gets the points.</div><div class="psel">${peopleSel}</div>` : ""}
         ${c.assign === "person" ? `<select id="ce-person" class="in" style="width:100%">${volNames.map((n) => `<option ${c.person === n ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select>` : ""}
         ${c.assign === "everyone" ? `<div class="note">Every active person gets their own copy each day.</div>` : ""}
-        ${c.assign === "bonus" ? `<div class="note">No fixed owner — anyone can claim it from the tablet for the points.</div>` : ""}
+        ${c.assign === "bonus" ? `<div class="note">No fixed owner &mdash; anyone can claim it from the tablet for the points.</div>` : ""}
         <label>Checklist (optional)</label>
         <div class="cked">${(c.checklist || []).map((it, i) => `<div class="ckrow"><input class="in sm" data-ckitem="${i}" value="${escapeHtml(it)}" placeholder="Sub-task" style="flex:1"><button class="rm" data-ckdel="${i}" aria-label="Remove">${TRASH}</button></div>`).join("")}<button class="btn" data-ckadd="1" style="margin-top:6px"><span>+</span> Add item</button></div>
-        <div class="note">Sub-tasks shown (and tickable) on the tablet — great for zone chores like a bathroom clean.</div>
+        <div class="note">Sub-tasks shown (and tickable) on the tablet &mdash; great for zone chores like a bathroom clean.</div>
         ${s.points ? `<label>Points</label><input id="ce-points" class="in sm" style="width:80px" value="${c.points || 0}">` : ""}
         ${s.approvals ? `<div class="drow"><div><b>Require approval</b><div class="sub">A lead checks before it counts.</div></div><button class="sw ${c.require_approval ? "on" : ""}" data-capprove="1"></button></div>` : ""}
       </div>
@@ -287,7 +287,7 @@ class RotaAdminCard extends HTMLElement {
       <div class="quick">
         <input id="vsearch" class="in" placeholder="Search staff by name" value="${escapeHtml(this._search)}" style="max-width:300px">
         <button class="btn" data-addvol="1"><span>+</span> Add volunteer</button>
-        <span class="hint">Activate to move to This week. ${s.solo ? "Mark <b>Solo</b> to skip crews (household)." : ""} ${s.experience ? "<b>New</b> → <b>Returning</b> after 2 weeks." : ""}</span>
+        <span class="hint">Activate to move to This week. ${s.solo ? "Mark <b>Solo</b> to skip crews (household)." : ""} ${s.experience ? "<b>New</b> &rarr; <b>Returning</b> after 2 weeks." : ""}</span>
       </div>
       ${sec("Active this week", active, q ? "No active staff match." : "No active staff yet.")}
       ${sec("Roster", roster, q ? "No inactive staff match." : "Everyone is active.")}`;
@@ -304,14 +304,14 @@ class RotaAdminCard extends HTMLElement {
     const exp = s.experience
       ? `<div class="er"><select class="in sm" data-vexp="${v.id}">
           ${["lead", "returning", "new"].map((r) => `<option value="${r}" ${v.experience === r ? "selected" : ""}>${cap(r)}</option>`).join("")}
-        </select><span>· ${v.weeks_active || 0} wks</span>${v.experience === "new" && (v.weeks_active || 0) >= 2 ? '<span class="promo">auto → Returning</span>' : ""}</div>`
+        </select><span>&middot; ${v.weeks_active || 0} wks</span>${v.experience === "new" && (v.weeks_active || 0) >= 2 ? '<span class="promo">auto &rarr; Returning</span>' : ""}</div>`
       : "";
     const soloBadge = s.solo && v.solo ? '<span class="solobadge">Solo</span>' : "";
     const soloBtn = s.solo ? `<button class="mini ${v.solo ? "on" : ""}" data-vsolo="${v.id}">Solo</button>` : "";
     let notifyRow = "";
     if (s.notifications) {
       const svc = Object.keys((this._hass && this._hass.services && this._hass.services.notify) || {});
-      notifyRow = `<div class="er"><span>Device</span><select class="in sm" data-vnotify="${v.id}"><option value="">— none —</option>${svc.map((n) => `<option value="${n}" ${v.notify === n ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select></div>`;
+      notifyRow = `<div class="er"><span>Device</span><select class="in sm" data-vnotify="${v.id}"><option value="">&mdash; none &mdash;</option>${svc.map((n) => `<option value="${n}" ${v.notify === n ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select></div>`;
     }
     return `<div class="vrow"><span class="av" style="background:${this._avColor(v)}">${initials(v.name)}</span>
       <div class="vmeta"><b>${escapeHtml(v.name)} ${soloBadge}</b>${exp}${notifyRow}</div>
@@ -324,8 +324,8 @@ class RotaAdminCard extends HTMLElement {
   _settings() {
     const s = this._state.settings || {};
     const toggles = [
-      ["notifications", "Reminders", "Nudge people on their phone about chores they haven’t finished. Turn off for camp. Set each person’s device on the Volunteers tab."],
-      ["solo", "Solo users", "Assign chores to a person on their own — straight into the schedule, bypassing crews. On for a household."],
+      ["notifications", "Reminders", "Nudge people on their phone about chores they haven&rsquo;t finished. Turn off for camp. Set each person&rsquo;s device on the Volunteers tab."],
+      ["solo", "Solo users", "Assign chores to a person on their own &mdash; straight into the schedule, bypassing crews. On for a household."],
       ["approvals", "Approvals", "Allow chores that need a lead to check the work before it counts."],
       ["points", "Award points", "Track points for completed chores. Off = accountability only."],
       ["experience", "Experience levels", "Track Lead / Returning / New per volunteer; auto-promote after 2 weeks. Admin-only."],
@@ -370,7 +370,7 @@ class RotaAdminCard extends HTMLElement {
 
   _pointsBody() {
     const p = this._pointsData;
-    if (!p) return `<div class="pad">Loading points…</div>`;
+    if (!p) return `<div class="pad">Loading points&hellip;</div>`;
     const resets = [["none", "Never"], ["weekly", "Weekly"], ["biweekly", "Every 2 weeks"], ["monthly", "Monthly"]];
     const cur = p.reset || "none";
     const resetSel = `<div class="frow"><span>Reset standings</span><select class="in sm" data-preset>${resets.map(([v, l]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${l}</option>`).join("")}</select>${p.since ? `<span class="hint">window since ${fmtDay(p.since)}</span>` : `<span class="hint">all-time</span>`}</div>`;
@@ -554,8 +554,8 @@ function fmtBucket(iso, view) {
 function freqLabel(c) {
   const f = c.frequency || "daily";
   if (f === "every_n") return `Every ${c.interval || 2} days`;
-  if (f === "weekly") return "Weekly" + (c.days && c.days.length ? " · " + c.days.map((d) => cap(d)).join("/") : "");
-  if (f === "monthly") return `Monthly · ${c.day_of_month || 1}`;
+  if (f === "weekly") return "Weekly" + (c.days && c.days.length ? " &middot; " + c.days.map((d) => cap(d)).join("/") : "");
+  if (f === "monthly") return `Monthly &middot; ${c.day_of_month || 1}`;
   return cap(f);
 }
 function assignLabel(c) {
@@ -563,8 +563,8 @@ function assignLabel(c) {
   if (c.assign === "people") return "Rotate: " + (c.people || []).join(", ");
   if (c.assign === "pair") return "Together: " + (c.people || []).join(" & ");
   if (c.assign === "everyone") return "Everyone";
-  if (c.assign === "bonus") return "Bonus — up for grabs";
-  return "Only " + (c.person || "—");
+  if (c.assign === "bonus") return "Bonus &mdash; up for grabs";
+  return "Only " + (c.person || "&mdash;");
 }
 
 const STYLE = `<style>
@@ -698,4 +698,4 @@ const STYLE = `<style>
 if (!customElements.get("rota-admin-card")) customElements.define("rota-admin-card", RotaAdminCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-admin-card", name: "Rota Admin", description: "Manage Rota volunteers, crews, chores, and settings." });
-console.info("%c ROTA-ADMIN-CARD %c v0.2.4 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
+console.info("%c ROTA-ADMIN-CARD %c v0.2.5 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");

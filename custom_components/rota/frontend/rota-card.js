@@ -2,7 +2,7 @@
  * Rota crew tablet card.
  *
  * Reads sensor.rota_today (today) and, for other days, calls the rota/schedule
- * websocket command — so you can flip backwards and forwards through the days
+ * websocket command &mdash; so you can flip backwards and forwards through the days
  * with the arrows by the date. Drives rota.mark_done / rota.approve / rota.undo.
  * Dayparts (configurable day sections) with a whole-day toggle, plus an
  * always-visible long-term section for weekly / monthly chores.
@@ -145,17 +145,17 @@ class RotaCard extends HTMLElement {
     const bar = `<div class="bar">
       <div class="brand"><span class="logo">${BROOM}</span>${escapeHtml(this._config.title || "Rota")}</div>
       <div class="nav">
-        <button class="arw" data-nav="-1" aria-label="Previous day">‹</button>
+        <button class="arw" data-nav="-1" aria-label="Previous day">&lsaquo;</button>
         <button class="date ${isToday ? "today" : "link"}" data-nav="0">
           <span class="dtop">${fmtWeekday(dateStr)}${isToday ? '<span class="todaytag">Today</span>' : ""}</span>
           <span class="dsub">${fmtMonthDay(dateStr)}</span>
         </button>
-        <button class="arw" data-nav="1" aria-label="Next day">›</button>
+        <button class="arw" data-nav="1" aria-label="Next day">&rsaquo;</button>
       </div>
     </div>`;
 
     if (!a) {
-      root.innerHTML = `<ha-card>${bar}<div class="empty">${this._loading ? "Loading…" : "No schedule."}</div></ha-card>${STYLE}`;
+      root.innerHTML = `<ha-card>${bar}<div class="empty">${this._loading ? "Loading&hellip;" : "No schedule."}</div></ha-card>${STYLE}`;
       this._delegate();
       return;
     }
@@ -211,7 +211,7 @@ class RotaCard extends HTMLElement {
     }
 
     const ltHtml = ltF.length ? `<div class="sec">Long-term</div>${this._group(null, ltF, true)}` : "";
-    const bonusHtml = bonus.length ? `<div class="sec">Bonus — up for grabs</div>${this._group(null, bonus)}` : "";
+    const bonusHtml = bonus.length ? `<div class="sec">Bonus &mdash; up for grabs</div>${this._group(null, bonus)}` : "";
     const confirmHtml = this._pending ? this._confirmBanner(dateStr) : "";
     const ptsHtml = this._pointsStrip(a);
 
@@ -224,9 +224,9 @@ class RotaCard extends HTMLElement {
     const subs = Object.keys(pts);
     if (!subs.length) return "";
     const rows = subs.map((s) => [s, pts[s]]).sort((x, y) => y[1] - x[1]);
-    const since = a.points_since ? " · since " + fmtMonthDay(a.points_since) : "";
+    const since = a.points_since ? " &middot; since " + fmtMonthDay(a.points_since) : "";
     const chips = rows
-      .map(([s, v], i) => `<span class="pchip2 ${i === 0 ? "lead" : ""}">${i === 0 ? '<span class="crown">★</span>' : ""}${escapeHtml(s)}<b>${v}</b></span>`)
+      .map(([s, v], i) => `<span class="pchip2 ${i === 0 ? "lead" : ""}">${i === 0 ? '<span class="crown">&#9733;</span>' : ""}${escapeHtml(s)}<b>${v}</b></span>`)
       .join("");
     return `<div class="pts"><span class="plabel">Points${since}</span><div class="pchips">${chips}</div></div>`;
   }
@@ -235,9 +235,9 @@ class RotaCard extends HTMLElement {
     const p = this._pending;
     const label = fmtDate(dateStr);
     const verb = p.act === "approve" ? "Approve" : "Mark done";
-    const forWho = p.by ? ` — credit ${escapeHtml(p.by)}` : "";
+    const forWho = p.by ? ` &mdash; credit ${escapeHtml(p.by)}` : "";
     return `<div class="warnbar">
-      <div class="wt"><b>This is ${escapeHtml(label)}, not today.</b><div>${verb} “${escapeHtml(p.name)}”${forWho} for ${escapeHtml(label)}?</div></div>
+      <div class="wt"><b>This is ${escapeHtml(label)}, not today.</b><div>${verb} &ldquo;${escapeHtml(p.name)}&rdquo;${forWho} for ${escapeHtml(label)}?</div></div>
       <div class="wb"><button class="wcancel" data-confirm-no="1">Cancel</button><button class="wok" data-confirm-yes="1">Yes, ${verb.toLowerCase()}</button></div>
     </div>`;
   }
@@ -257,25 +257,25 @@ class RotaCard extends HTMLElement {
 
   _choreCard(c, longTerm) {
     const status = c.status || "todo";
-    const pts = c.points ? ` · +${c.points}` : "";
-    const who = c.members && c.members.length ? (c.assignee || "") + " · " + c.members.join(", ")
+    const pts = c.points ? ` &middot; +${c.points}` : "";
+    const who = c.members && c.members.length ? (c.assignee || "") + " &middot; " + c.members.join(", ")
       : (c.bonus ? "Anyone" : (c.assignee || ""));
     const dueTxt = c.due_date ? "Due " + fmtDate(c.due_date) : c.due || "";
     const checks = new Set(c.checklist_done || []);
     const total = (c.checklist || []).length;
-    const prog = total ? ` · ${checks.size}/${total}` : "";
+    const prog = total ? ` &middot; ${checks.size}/${total}` : "";
     const meta = (longTerm || c.floating
-      ? escapeHtml(who + (dueTxt ? " · " + dueTxt : ""))
-      : escapeHtml(who + (c.require_approval ? " · needs a check" : ""))) + prog;
+      ? escapeHtml(who + (dueTxt ? " &middot; " + dueTxt : ""))
+      : escapeHtml(who + (c.require_approval ? " &middot; needs a check" : ""))) + prog;
     const attrs = `data-chore="${enc(c.id)}" data-date="${enc(c.date || "")}" data-part="${enc(c.daypart || "")}"`;
     const crediting = this._crediting && this._crediting.chore === c.id
       && this._crediting.date === (c.date || "") && this._crediting.part === (c.daypart || "");
     const checklistHtml = total && status !== "done"
-      ? `<div class="cklist">${c.checklist.map((label, i) => `<button class="ck ${checks.has(i) ? "on" : ""}" data-check="${i}" ${attrs}><span class="ckbox">${checks.has(i) ? "✓" : ""}</span><span>${escapeHtml(label)}</span></button>`).join("")}</div>`
+      ? `<div class="cklist">${c.checklist.map((label, i) => `<button class="ck ${checks.has(i) ? "on" : ""}" data-check="${i}" ${attrs}><span class="ckbox">${checks.has(i) ? "&check;" : ""}</span><span>${escapeHtml(label)}</span></button>`).join("")}</div>`
       : "";
     // How completion credits points: a picker (steal / bonus) under All, else a
     // fixed subject (the filtered person, or the per-person "everyone" instance).
-    // Under the All view, anyone can claim a chore they did — so ask "who did
+    // Under the All view, anyone can claim a chore they did &mdash; so ask "who did
     // it?". This covers person / people / crew / bonus AND each "everyone"
     // instance (so Joe can steal Travis's Make Bed). Pairs are the exception:
     // they credit their whole member list, so no single-doer picker.
@@ -283,8 +283,8 @@ class RotaCard extends HTMLElement {
     const defaultBy = this._subject ? this._subject : (c.everyone ? (c.assignee || "") : "");
     let btn, extra = "";
     if (status === "done") {
-      const credit = c.done_by ? " · " + escapeHtml(c.done_by) : "";
-      btn = `<div class="btn done">✓ ${c.require_approval ? "Checked" : "Done"}${credit}${pts}</div>`;
+      const credit = c.done_by ? " &middot; " + escapeHtml(c.done_by) : "";
+      btn = `<div class="btn done">&check; ${c.require_approval ? "Checked" : "Done"}${credit}${pts}</div>`;
       extra = `<button class="undo" data-act="undo" ${attrs}>Undo</button>`;
     } else if (status === "pending") {
       const credit = c.done_by ? ` (${escapeHtml(c.done_by)})` : "";
@@ -293,10 +293,10 @@ class RotaCard extends HTMLElement {
     } else if (crediting) {
       const cands = [c.assignee, ...this._candidates.filter((x) => x !== c.assignee)].filter(Boolean);
       const chips = cands.map((n) => `<button class="doer" data-doer="${enc(n)}">${escapeHtml(n)}</button>`).join("");
-      btn = `<div class="picker"><div class="pq">Who did it? — they get the ${c.points || 0} pts</div><div class="doers">${chips}</div><button class="pcancel" data-credit-cancel="1">Cancel</button></div>`;
+      btn = `<div class="picker"><div class="pq">Who did it? &mdash; they get the ${c.points || 0} pts</div><div class="doers">${chips}</div><button class="pcancel" data-credit-cancel="1">Cancel</button></div>`;
     } else {
       const doneAttrs = needpick ? 'data-needpick="1"' : `data-by="${enc(defaultBy)}"`;
-      btn = `<button class="btn ${status === "overdue" ? "over" : "todo"}" data-act="done" ${doneAttrs} ${attrs}>Mark done${c.bonus ? ` · +${c.points || 0}` : ""}</button>`;
+      btn = `<button class="btn ${status === "overdue" ? "over" : "todo"}" data-act="done" ${doneAttrs} ${attrs}>Mark done${c.bonus ? ` &middot; +${c.points || 0}` : ""}</button>`;
     }
     return `<div class="chore ${status}${crediting ? " crediting" : ""}${c.bonus ? " bonus" : ""}"><div class="ch"><div class="nm">${escapeHtml(c.name)}</div><div class="meta">${meta}</div></div>${checklistHtml}${btn}${extra ? `<div class="extra">${extra}</div>` : ""}</div>`;
   }
@@ -475,7 +475,7 @@ const STYLE = `<style>
   .ck.on .ckbox { background: var(--primary-color); border-color: var(--primary-color); }
   .ck.on span:last-child { text-decoration: line-through; }
   .chore.bonus { border-color: var(--warning-color, #b4791a); }
-  .chore.bonus .nm::before { content:"★ "; color:#E0A83E; }
+  .chore.bonus .nm::before { content:"\\2605 "; color:#E0A83E; }
   .extra { margin-top:10px; display:flex; justify-content:center; }
   .approve { height:40px; padding:0 16px; border-radius:10px; border:1px solid var(--primary-color); background: transparent; color: var(--primary-color); font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
   .undo { height:34px; padding:0 14px; border-radius:10px; border:1px solid var(--divider-color); background: transparent; color: var(--secondary-text-color); font:inherit; font-size:13px; cursor:pointer; }
@@ -490,8 +490,8 @@ const STYLE = `<style>
   .wok { height:38px; padding:0 16px; border-radius:10px; border:0; background: var(--warning-color, #b4791a); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
 </style>`;
 
-const CARD_VERSION = "0.2.4";
+const CARD_VERSION = "0.2.5";
 if (!customElements.get("rota-card")) customElements.define("rota-card", RotaCard);
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet — day nav, dayparts, long-term chores, approvals." });
+window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet &mdash; day nav, dayparts, long-term chores, approvals." });
 console.info(`%c ROTA-CARD %c v${CARD_VERSION} `, "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
