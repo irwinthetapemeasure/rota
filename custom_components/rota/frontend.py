@@ -34,8 +34,12 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         return
 
     root = Path(__file__).parent / "frontend"
+    # cache_headers=True: the ?v=<version> query busts the cache on updates, so
+    # each version can be cached hard. Serving without cache headers makes the
+    # companion app re-fetch the module constantly and cache it inconsistently,
+    # which shows up as the card randomly failing to load ("Configuration error").
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(f"{URL_BASE}/{card}", str(root / card), False) for card in CARDS]
+        [StaticPathConfig(f"{URL_BASE}/{card}", str(root / card), True) for card in CARDS]
     )
 
     integration = await async_get_integration(hass, DOMAIN)
