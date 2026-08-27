@@ -20,6 +20,7 @@ class RotaAdminCard extends HTMLElement {
     this._editing = null; // chore being edited (working copy) or null
     this._pointsData = null; // cached rota/points report
     this._pointsView = "weekly"; // weekly | monthly | annual
+    this._pointsSubject = null; // standings row drilled into (subject name)
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
 
@@ -378,8 +379,9 @@ class RotaAdminCard extends HTMLElement {
     const viewTabs = [["weekly", "Weekly"], ["monthly", "Monthly"], ["annual", "Annual"]]
       .map(([v, l]) => `<button class="tab ${this._pointsView === v ? "sel" : ""}" data-pview="${v}">${l}</button>`).join("");
     return `<div class="quick" style="justify-content:space-between">${resetSel}<button class="btn" data-preload="1">Refresh</button></div>
-      <div class="vsec">Current standings <span class="c">${p.since ? "this window" : "all-time"}</span></div>
+      <div class="vsec">Current standings <span class="c">${p.since ? "this window" : "all-time"}</span><span class="hint" style="margin-left:auto;text-transform:none;letter-spacing:0">Tap a name for their chores</span></div>
       <div class="standwrap">${this._standings(p.current || {}, subjects)}</div>
+      ${this._pointsSubject ? this._breakdown(p) : ""}
       <div class="vsec">History</div>
       <div class="chartwrap"><div class="ptabs">${viewTabs}</div>${this._chart(p[this._pointsView] || [], subjects)}${this._legend(subjects)}</div>`;
   }
@@ -388,10 +390,22 @@ class RotaAdminCard extends HTMLElement {
     const rows = subjects.map((s) => [s, totals[s] || 0]).sort((a, b) => b[1] - a[1]);
     if (!rows.length) return `<div class="vempty">No points recorded yet.</div>`;
     const max = Math.max(1, rows[0][1]);
-    return rows.map(([s, v], i) => `<div class="standrow"><span class="rank">${i + 1}</span>
+    return rows.map(([s, v], i) => `<div class="standrow ${this._pointsSubject === s ? "open" : ""}" data-standsubj="${enc(s)}"><span class="rank">${i + 1}</span>
       <span class="sname">${escapeHtml(s)}</span>
       <div class="sbar"><i style="width:${Math.round((v / max) * 100)}%;background:${this._subColor(s)}"></i></div>
-      <b class="sval">${v}</b></div>`).join("");
+      <b class="sval">${v}</b><span class="chev">${this._pointsSubject === s ? "&minus;" : "+"}</span></div>`).join("");
+  }
+
+  _breakdown(p) {
+    const subject = this._pointsSubject;
+    const entries = (p.entries || []).filter((e) => e.subject === subject).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const total = entries.reduce((s, e) => s + (e.points || 0), 0);
+    const rows = entries.length
+      ? entries.map((e) => `<div class="brow"><span class="bname">${escapeHtml(e.chore || "")}</span><span class="bdate">${fmtDay(e.date)}</span><b class="bpts">+${e.points}</b></div>`).join("")
+        + `<div class="brow tot"><span class="bname">Total &middot; ${entries.length} chore${entries.length === 1 ? "" : "s"}</span><span class="bdate"></span><b class="bpts">+${total}</b></div>`
+      : `<div class="vempty">No completed chores ${p.since ? "this window" : "yet"}.</div>`;
+    return `<div class="vsec">${escapeHtml(subject)} &mdash; completed <button class="btn" data-bdclose="1" style="margin-left:auto;height:30px;padding:0 12px">Close</button></div>
+      <div class="bdwrap">${rows}</div>`;
   }
 
   _chart(series, subjects) {
@@ -426,9 +440,11 @@ class RotaAdminCard extends HTMLElement {
   _onClick(e) {
     const t = (a) => e.target.closest(`[${a}]`);
     let el;
-    if ((el = t("data-view"))) { this._view = el.getAttribute("data-view"); this._confirmDel = null; this._confirmDelChore = null; if (this._view === "points") this._loadPoints(); this._render(); return; }
+    if ((el = t("data-view"))) { this._view = el.getAttribute("data-view"); this._confirmDel = null; this._confirmDelChore = null; this._pointsSubject = null; if (this._view === "points") this._loadPoints(); this._render(); return; }
     if ((el = t("data-pview"))) { this._pointsView = el.getAttribute("data-pview"); this._render(); return; }
     if (t("data-preload")) { this._loadPoints(); return; }
+    if ((el = t("data-standsubj"))) { const s = dec(el.getAttribute("data-standsubj")); this._pointsSubject = this._pointsSubject === s ? null : s; this._render(); return; }
+    if (t("data-bdclose")) { this._pointsSubject = null; this._render(); return; }
     if ((el = t("data-vactive"))) { const v = this._vol(el.getAttribute("data-vactive")); this._cmd("rota/volunteer/save", { volunteer: { id: v.id, active: !v.active } }); return; }
     if ((el = t("data-vsolo"))) { const v = this._vol(el.getAttribute("data-vsolo")); this._cmd("rota/volunteer/save", { volunteer: { id: v.id, solo: !v.solo } }); return; }
     if ((el = t("data-vdel"))) { this._confirmDel = el.getAttribute("data-vdel"); this._render(); return; }
@@ -675,8 +691,19 @@ const STYLE = `<style>
   .dft { display:flex; align-items:center; gap:10px; padding:14px 16px; border-top:1px solid var(--divider-color); }
   .btn.primary { background: var(--primary-color); border-color: var(--primary-color); color:#fff; }
   .standwrap { margin:0 16px; border:1px solid var(--divider-color); border-radius:12px; overflow:hidden; }
-  .standrow { display:flex; align-items:center; gap:12px; padding:11px 14px; border-top:1px solid var(--divider-color); }
+  .standrow { display:flex; align-items:center; gap:12px; padding:11px 14px; border-top:1px solid var(--divider-color); cursor:pointer; }
   .standrow:first-child { border-top:0; }
+  .standrow:hover { background: var(--secondary-background-color); }
+  .standrow.open { background: var(--secondary-background-color); }
+  .chev { width:20px; text-align:center; color: var(--secondary-text-color); font-weight:700; flex:none; }
+  .bdwrap { margin:0 16px 4px; border:1px solid var(--divider-color); border-top:0; border-radius:0 0 12px 12px; overflow:hidden; }
+  .brow { display:flex; align-items:center; gap:12px; padding:9px 14px; border-top:1px solid var(--divider-color); font-size:13.5px; }
+  .brow:first-child { border-top:0; }
+  .bname { flex:1; min-width:0; color: var(--primary-text-color); }
+  .bdate { color: var(--secondary-text-color); font-size:12.5px; }
+  .bpts { font-variant-numeric:tabular-nums; color: var(--primary-color); min-width:44px; text-align:right; }
+  .brow.tot { background: var(--secondary-background-color); font-weight:600; }
+  .brow.tot .bname { color: var(--primary-text-color); }
   .rank { width:22px; height:22px; border-radius:50%; background: var(--secondary-background-color); color: var(--secondary-text-color); font-size:12px; font-weight:600; display:grid; place-items:center; flex:none; }
   .standrow:first-child .rank { background: var(--primary-color); color:#fff; }
   .sname { font-weight:550; font-size:14.5px; color: var(--primary-text-color); min-width:90px; }
@@ -698,4 +725,4 @@ const STYLE = `<style>
 if (!customElements.get("rota-admin-card")) customElements.define("rota-admin-card", RotaAdminCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-admin-card", name: "Rota Admin", description: "Manage Rota volunteers, crews, chores, and settings." });
-console.info("%c ROTA-ADMIN-CARD %c v0.2.5 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
+console.info("%c ROTA-ADMIN-CARD %c v0.2.6 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");

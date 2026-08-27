@@ -490,7 +490,7 @@ const STYLE = `<style>
   .wok { height:38px; padding:0 16px; border-radius:10px; border:0; background: var(--warning-color, #b4791a); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
 </style>`;
 
-const CARD_VERSION = "0.2.5";
+const CARD_VERSION = "0.2.6";
 if (!customElements.get("rota-card")) customElements.define("rota-card", RotaCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet &mdash; day nav, dayparts, long-term chores, approvals." });

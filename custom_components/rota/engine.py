@@ -444,6 +444,18 @@ def points_report(data: dict[str, Any], today: date) -> dict[str, Any]:
     settings = data.get("settings", {})
     since = points_period_start(settings, today)
     subjects = sorted({e.get("subject") for e in data.get("points_log", []) if e.get("subject")})
+    names = {c.get("id"): c.get("name", c.get("id")) for c in data.get("chores", [])}
+    cutoff = since.isoformat() if since else None
+    entries = [
+        {
+            "subject": e.get("subject"),
+            "chore": names.get(e.get("chore"), e.get("chore")),
+            "points": int(e.get("points", 0)),
+            "date": e.get("date"),
+        }
+        for e in data.get("points_log", [])
+        if e.get("subject") and not (cutoff and (e.get("date") or "") < cutoff)
+    ]
     return {
         "reset": settings.get("points_reset", "none"),
         "since": since.isoformat() if since else None,
@@ -453,6 +465,7 @@ def points_report(data: dict[str, Any], today: date) -> dict[str, Any]:
         "weekly": points_series(data, today, "week", 12),
         "monthly": points_series(data, today, "month", 12),
         "annual": points_series(data, today, "year", 4),
+        "entries": entries,
     }
 
 
