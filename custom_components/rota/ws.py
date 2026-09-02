@@ -78,6 +78,25 @@ def async_register_ws(hass: HomeAssistant) -> None:
 
     websocket_api.async_register_command(hass, handle_points_remove_day)
 
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "rota/points/adjust",
+            vol.Required("subject"): str,
+            vol.Required("delta"): int,
+            vol.Optional("note"): str,
+        }
+    )
+    @websocket_api.async_response
+    async def handle_points_adjust(hass: HomeAssistant, connection, msg) -> None:
+        coordinator = hass.data.get(DOMAIN)
+        if coordinator is None:
+            connection.send_error(msg["id"], "not_ready", "Rota not set up")
+            return
+        await coordinator.async_adjust_points(msg["subject"], msg["delta"], msg.get("note"))
+        connection.send_result(msg["id"], coordinator.points_report())
+
+    websocket_api.async_register_command(hass, handle_points_adjust)
+
     # --- admin API: mutations (each returns the new state) ------------------
 
     def _mutation(command_type: str, schema: dict, mutate_factory):

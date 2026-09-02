@@ -21,7 +21,8 @@ class RotaAdminCard extends HTMLElement {
     this._pointsData = null; // cached rota/points report
     this._pointsView = "weekly"; // weekly | monthly | annual
     this._pointsSubject = null; // standings row drilled into (subject name)
-    this._pointsWindow = "reset"; // drill-down window: reset | week | month | all
+    this._pointsWindow = "month"; // drill-down granularity: day | week | month | year | all
+    this._pointsOffset = 0; // periods back (negative) / forward from now
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
 
@@ -397,33 +398,63 @@ class RotaAdminCard extends HTMLElement {
       <b class="sval">${v}</b><span class="chev">${this._pointsSubject === s ? "&minus;" : "+"}</span></div>`).join("");
   }
 
-  _winCutoff(p, win) {
-    const base = p.today ? new Date(p.today + "T00:00:00") : new Date();
+  _period(p) {
+    const g = this._pointsWindow || "month";
+    const off = this._pointsOffset || 0;
     const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    if (win === "week") { const d = new Date(base); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
-    if (win === "month") { const d = new Date(base); d.setDate(1); return iso(d); }
-    if (win === "all") return null;
-    return p.since || null; // "reset" window
+    const base = p.today ? new Date(p.today + "T00:00:00") : new Date();
+    if (g === "all") return { start: null, end: null, label: "All time", nav: false };
+    let start, end, label;
+    if (g === "day") {
+      const d = new Date(base); d.setDate(d.getDate() + off);
+      const e2 = new Date(d); e2.setDate(e2.getDate() + 1);
+      start = iso(d); end = iso(e2);
+      label = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    } else if (g === "week") {
+      const d = new Date(base); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + off * 7);
+      const e2 = new Date(d); e2.setDate(e2.getDate() + 7);
+      const last = new Date(d); last.setDate(last.getDate() + 6);
+      start = iso(d); end = iso(e2);
+      label = `${fmtDay(iso(d))} &ndash; ${fmtDay(iso(last))}`;
+    } else if (g === "month") {
+      const d = new Date(base.getFullYear(), base.getMonth() + off, 1);
+      const e2 = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      start = iso(d); end = iso(e2);
+      label = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    } else { // year
+      const d = new Date(base.getFullYear() + off, 0, 1);
+      start = iso(d); end = iso(new Date(d.getFullYear() + 1, 0, 1));
+      label = String(d.getFullYear());
+    }
+    return { start, end, label, nav: true, canForward: off < 0 };
   }
 
   _breakdown(p) {
     const subject = this._pointsSubject;
-    const win = this._pointsWindow || "reset";
-    const cutoff = this._winCutoff(p, win);
+    const per = this._period(p);
     const entries = (p.entries || [])
-      .filter((e) => e.subject === subject && (!cutoff || (e.date || "") >= cutoff))
+      .filter((e) => e.subject === subject && (!per.start || (e.date || "") >= per.start) && (!per.end || (e.date || "") < per.end))
       .sort((a, b) => (b.ts || b.date || "").localeCompare(a.ts || a.date || ""));
     const total = entries.reduce((s, e) => s + (e.points || 0), 0);
-    const winTabs = [["reset", "Window"], ["week", "Week"], ["month", "Month"], ["all", "All time"]]
-      .filter(([v]) => v !== "reset" || p.since)
-      .map(([v, l]) => `<button class="tab ${win === v ? "sel" : ""}" data-pwin="${v}">${l}</button>`).join("");
+    const sign = (n) => (n >= 0 ? "+" : "") + n;
+    const gTabs = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["year", "Year"], ["all", "All"]]
+      .map(([v, l]) => `<button class="tab ${this._pointsWindow === v ? "sel" : ""}" data-pwin="${v}">${l}</button>`).join("");
+    const nav = per.nav
+      ? `<div class="pnav"><button class="arw2" data-pnav="-1" aria-label="Earlier">&lsaquo;</button><span class="pnavlbl">${per.label}</span><button class="arw2" data-pnav="1" aria-label="Later" ${per.canForward ? "" : "disabled"}>&rsaquo;</button></div>`
+      : `<div class="pnav"><span class="pnavlbl">${per.label}</span></div>`;
     const rows = entries.length
-      ? entries.map((e) => `<div class="brow"><span class="bname">${escapeHtml(e.chore || "")}${e["from"] ? ` <span class="stolen">stolen from ${escapeHtml(e["from"])}</span>` : ""}</span><span class="bdate">${fmtDay(e.date)}${e.ts ? " &middot; " + fmtTime(e.ts) : ""}</span><b class="bpts">+${e.points}</b></div>`).join("")
-        + `<div class="brow tot"><span class="bname">Total &middot; ${entries.length} chore${entries.length === 1 ? "" : "s"}</span><span class="bdate"></span><b class="bpts">+${total}</b></div>`
-      : `<div class="vempty">No completed chores in this window.</div>`;
-    const removeRow = `<div class="brow rmrow"><span>Remove a day&rsquo;s points</span><input class="in sm" type="date" data-rmdate value="${escapeHtml(p.today || "")}" style="width:150px"><button class="btn danger" data-rmday="${enc(subject)}">Remove</button></div>`;
-    return `<div class="vsec">${escapeHtml(subject)} &mdash; completed<div class="ptabs" style="margin-left:auto">${winTabs}</div><button class="btn" data-bdclose="1" style="margin-left:8px;height:30px;padding:0 12px">Close</button></div>
-      <div class="bdwrap">${rows}${removeRow}</div>`;
+      ? entries.map((e) => `<div class="brow${e.manual ? " manual" : ""}"><span class="bname">${escapeHtml(e.chore || "")}${e["from"] ? ` <span class="stolen">stolen from ${escapeHtml(e["from"])}</span>` : ""}</span><span class="bdate">${fmtDay(e.date)}${e.ts ? " &middot; " + fmtTime(e.ts) : ""}</span><b class="bpts ${e.points < 0 ? "neg" : ""}">${sign(e.points)}</b></div>`).join("")
+        + `<div class="brow tot"><span class="bname">Total &middot; ${entries.length} item${entries.length === 1 ? "" : "s"}</span><span class="bdate"></span><b class="bpts ${total < 0 ? "neg" : ""}">${sign(total)}</b></div>`
+      : `<div class="vempty">Nothing in this period.</div>`;
+    const adjustRow = `<div class="brow rmrow"><span>Adjust points</span>
+      <input class="in sm" type="number" data-adjn value="5" min="1" style="width:70px">
+      <input class="in sm" data-adjnote placeholder="reason (optional)" style="flex:1;min-width:110px">
+      <button class="btn" data-adjust="add" data-subj="${enc(subject)}"><span>+</span> Add</button>
+      <button class="btn danger" data-adjust="remove" data-subj="${enc(subject)}">&minus; Remove</button></div>`;
+    const removeRow = `<div class="brow rmrow"><span>Remove a day&rsquo;s points</span><input class="in sm" type="date" data-rmdate value="${escapeHtml(p.today || "")}" style="width:150px"><button class="btn danger" data-rmday="${enc(subject)}">Remove day</button></div>`;
+    return `<div class="vsec">${escapeHtml(subject)}<button class="btn" data-bdclose="1" style="margin-left:auto;height:30px;padding:0 12px">Close</button></div>
+      <div class="bdctl"><div class="ptabs">${gTabs}</div>${nav}</div>
+      <div class="bdwrap">${rows}${adjustRow}${removeRow}</div>`;
   }
 
   _chart(series, subjects) {
@@ -463,7 +494,8 @@ class RotaAdminCard extends HTMLElement {
     if (t("data-preload")) { this._loadPoints(); return; }
     if ((el = t("data-standsubj"))) { const s = dec(el.getAttribute("data-standsubj")); this._pointsSubject = this._pointsSubject === s ? null : s; this._render(); return; }
     if (t("data-bdclose")) { this._pointsSubject = null; this._render(); return; }
-    if ((el = t("data-pwin"))) { this._pointsWindow = el.getAttribute("data-pwin"); this._render(); return; }
+    if ((el = t("data-pwin"))) { this._pointsWindow = el.getAttribute("data-pwin"); this._pointsOffset = 0; this._render(); return; }
+    if ((el = t("data-pnav"))) { this._pointsOffset = Math.min(0, (this._pointsOffset || 0) + (+el.getAttribute("data-pnav"))); this._render(); return; }
     if ((el = t("data-rmday"))) {
       const subject = dec(el.getAttribute("data-rmday"));
       const di = this.shadowRoot.querySelector("[data-rmdate]");
@@ -473,6 +505,18 @@ class RotaAdminCard extends HTMLElement {
           .then((pp) => { this._pointsData = pp; this._render(); })
           .catch((err) => console.error("rota remove_day", err));
       }
+      return;
+    }
+    if ((el = t("data-adjust"))) {
+      const subject = dec(el.getAttribute("data-subj"));
+      const nIn = this.shadowRoot.querySelector("[data-adjn]");
+      const noteIn = this.shadowRoot.querySelector("[data-adjnote]");
+      const n = Math.abs(parseInt(nIn ? nIn.value : "0", 10) || 0);
+      if (!n) return;
+      const delta = el.getAttribute("data-adjust") === "remove" ? -n : n;
+      this._hass.connection.sendMessagePromise({ type: "rota/points/adjust", subject, delta, note: noteIn ? noteIn.value : "" })
+        .then((pp) => { this._pointsData = pp; this._render(); })
+        .catch((err) => console.error("rota adjust", err));
       return;
     }
     if ((el = t("data-vactive"))) { const v = this._vol(el.getAttribute("data-vactive")); this._cmd("rota/volunteer/save", { volunteer: { id: v.id, active: !v.active } }); return; }
@@ -737,7 +781,16 @@ const STYLE = `<style>
   .brow.tot .bname { color: var(--primary-text-color); }
   .stolen { font-size:11.5px; color: var(--warning-color,#b4791a); font-style:italic; }
   .brow.rmrow { gap:10px; flex-wrap:wrap; color: var(--secondary-text-color); font-size:12.5px; }
-  .brow.rmrow .btn.danger { height:32px; padding:0 12px; }
+  .brow.rmrow .btn { height:32px; padding:0 12px; }
+  .brow.manual .bname { font-style:italic; color: var(--secondary-text-color); }
+  .bpts.neg { color: var(--error-color,#c0392b); }
+  .bdctl { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 16px 8px; }
+  .pnav { display:flex; align-items:center; gap:8px; }
+  .arw2 { width:32px; height:32px; border-radius:8px; border:1px solid var(--divider-color); background: var(--card-background-color);
+          color: var(--primary-text-color); font-size:18px; line-height:1; cursor:pointer; }
+  .arw2:hover:not([disabled]) { border-color: var(--primary-color); color: var(--primary-color); }
+  .arw2[disabled] { opacity:.35; cursor:default; }
+  .pnavlbl { font-size:13.5px; font-weight:550; color: var(--primary-text-color); min-width:120px; text-align:center; }
   .rank { width:22px; height:22px; border-radius:50%; background: var(--secondary-background-color); color: var(--secondary-text-color); font-size:12px; font-weight:600; display:grid; place-items:center; flex:none; }
   .standrow:first-child .rank { background: var(--primary-color); color:#fff; }
   .sname { font-weight:550; font-size:14.5px; color: var(--primary-text-color); min-width:90px; }
@@ -759,4 +812,4 @@ const STYLE = `<style>
 if (!customElements.get("rota-admin-card")) customElements.define("rota-admin-card", RotaAdminCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-admin-card", name: "Rota Admin", description: "Manage Rota volunteers, crews, chores, and settings." });
-console.info("%c ROTA-ADMIN-CARD %c v0.2.8 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
+console.info("%c ROTA-ADMIN-CARD %c v0.2.9 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");

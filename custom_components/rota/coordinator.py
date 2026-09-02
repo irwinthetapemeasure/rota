@@ -101,6 +101,10 @@ class RotaCoordinator(DataUpdateCoordinator):
         await self._persist()
         return removed
 
+    async def async_adjust_points(self, subject: str, delta: int, note: str | None = None) -> None:
+        engine.adjust_points(self.store.data, subject, delta, dt_util.now().isoformat(), note)
+        await self._persist()
+
     async def async_approve(
         self, ref: str, on: date, by: str | None = None, part: str | None = None
     ) -> str | None:

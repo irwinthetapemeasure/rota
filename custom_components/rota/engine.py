@@ -473,11 +473,12 @@ def points_report(data: dict[str, Any], today: date) -> dict[str, Any]:
     entries = [
         {
             "subject": e.get("subject"),
-            "chore": names.get(e.get("chore"), e.get("chore")),
+            "chore": names.get(e.get("chore")) if e.get("chore") else (e.get("note") or "Manual adjustment"),
             "points": int(e.get("points", 0)),
             "date": e.get("date"),
             "ts": e.get("ts"),
             "from": e.get("from"),
+            "manual": not e.get("chore"),
         }
         for e in data.get("points_log", [])
         if e.get("subject")
@@ -503,6 +504,24 @@ def remove_points_on(data: dict[str, Any], subject: str, date_iso: str) -> int:
     kept = [e for e in log if not (e.get("subject") == subject and (e.get("date") or "") == date_iso)]
     data["points_log"] = kept
     return len(log) - len(kept)
+
+
+def adjust_points(data: dict[str, Any], subject: str, delta: int, ts: str, note: str | None = None) -> None:
+    """Manually add (delta > 0) or remove (delta < 0) points for a subject. Logged
+    as a standalone entry (no chore) so it shows in the drill-down and counts in
+    the totals."""
+    on = ts[:10] if len(ts) >= 10 else ts
+    data.setdefault("points_log", []).append(
+        {
+            "key": f"adjust|{ts}",
+            "subject": subject,
+            "chore": None,
+            "note": (note or "").strip() or None,
+            "points": int(delta),
+            "date": on,
+            "ts": ts,
+        }
+    )
 
 
 # --- crews -------------------------------------------------------------------
