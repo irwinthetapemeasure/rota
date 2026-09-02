@@ -273,25 +273,28 @@ def resolve_status(
 
 
 def mark_done(
-    data: dict[str, Any], chore: dict[str, Any], on: date, ts: str, by: str | None = None, part: str | None = None
+    data: dict[str, Any], chore: dict[str, Any], on: date, ts: str, by: str | None = None,
+    part: str | None = None, helpers: list[str] | None = None,
 ) -> str:
-    """Mark an occurrence done — or pending, if it needs a lead's approval."""
+    """Mark an occurrence done — or pending, if it needs a lead's approval.
+
+    ``helpers`` (for shared/pair chores) is the list of people who did it; the
+    chore's points are split evenly among them.
+    """
     settings = data.get("settings", {})
     key = occ_key(chore["id"], on, part)
     occ = data.setdefault("occurrences", {}).setdefault(key, {})
     checks = occ.get("checklist_done") or []  # preserve any ticked sub-items
+    helpers = [h for h in (helpers or []) if h] or None
+    base: dict[str, Any] = {"done_by": by, "ts": ts, "checklist_done": checks}
+    if helpers:
+        base["helpers"] = helpers
     needs_approval = bool(chore.get("require_approval")) and bool(settings.get("approvals"))
     if needs_approval:
-        data["occurrences"][key] = {"status": "pending", "done_by": by, "ts": ts, "checklist_done": checks}
+        data["occurrences"][key] = {"status": "pending", **base}
         return "pending"
-    data["occurrences"][key] = {
-        "status": "done",
-        "done_by": by,
-        "approved_by": by,
-        "ts": ts,
-        "checklist_done": checks,
-    }
-    _post_points(data, chore, on, ts, part, subject=by)
+    data["occurrences"][key] = {"status": "done", "approved_by": by, **base}
+    _post_points(data, chore, on, ts, part, subject=by, helpers=helpers)
     return "done"
 
 
@@ -316,7 +319,7 @@ def approve(
     occ["status"] = "done"
     occ["approved_by"] = by
     occ["approved_ts"] = ts
-    _post_points(data, chore, on, ts, part, subject=occ.get("done_by"))
+    _post_points(data, chore, on, ts, part, subject=occ.get("done_by"), helpers=occ.get("helpers"))
     return "done"
 
 
@@ -327,38 +330,59 @@ def undo(data: dict[str, Any], chore: dict[str, Any], on: date, part: str | None
     return "todo" if occ else None
 
 
+def _split_points(points: int, people: list[str]) -> list[tuple[str, int]]:
+    """Split points evenly across people, distributing any remainder so the
+    total is exactly preserved (e.g. 5 among 2 -> [3, 2])."""
+    n = len(people)
+    if not n:
+        return []
+    base, rem = divmod(int(points), n)
+    return [(p, base + (1 if i < rem else 0)) for i, p in enumerate(people)]
+
+
 def _post_points(
     data: dict[str, Any], chore: dict[str, Any], on: date, ts: str, part: str | None = None,
-    subject: str | None = None,
+    subject: str | None = None, helpers: list[str] | None = None,
 ) -> None:
     settings = data.get("settings", {})
     if not settings.get("points") or not chore.get("points"):
         return
     _remove_points(data, chore, on, part)  # keep it idempotent — never double-post
-    # Who earns the points:
-    #  - an explicit doer (kiosk "steal", or a per-person "everyone" chore) wins;
-    #  - a pair credits every member;
-    #  - otherwise the schedule's assignee.
-    if subject:
-        subjects = [subject]
+    pts = int(chore.get("points", 0))
+    # The person the schedule rostered for this occurrence (for "stolen from").
+    if chore.get("assign") == "everyone":
+        rostered = part
     elif chore.get("assign") == "pair":
-        subjects = list(chore.get("people") or [])
+        rostered = None  # shared — no single owner
     else:
         period = period_anchor(chore, on) if chore_mode(chore) == "floating" else on
-        who = resolve_subject(data, chore, period)
-        subjects = [who] if who else []
+        rostered = resolve_subject(data, chore, period)
+    # Who earns the points, and how much each:
+    #  - explicit helpers (shared chore) split the points evenly;
+    #  - an explicit doer (steal / everyone instance) takes the full points;
+    #  - a pair with no helper list splits evenly across its members;
+    #  - otherwise the rostered assignee takes the full points.
+    if helpers:
+        credit = _split_points(pts, helpers)
+    elif subject:
+        credit = [(subject, pts)]
+    elif chore.get("assign") == "pair":
+        credit = _split_points(pts, list(chore.get("people") or []))
+    else:
+        credit = [(rostered, pts)] if rostered else []
     key = occ_key(chore["id"], on, part)
-    for who in subjects:
-        data.setdefault("points_log", []).append(
-            {
-                "key": key,
-                "subject": who,
-                "chore": chore["id"],
-                "points": chore.get("points", 0),
-                "date": on.isoformat(),
-                "ts": ts,
-            }
-        )
+    for who, amount in credit:
+        entry = {
+            "key": key,
+            "subject": who,
+            "chore": chore["id"],
+            "points": amount,
+            "date": on.isoformat(),
+            "ts": ts,
+        }
+        if rostered and who != rostered:
+            entry["from"] = rostered  # stolen from the rostered person
+        data.setdefault("points_log", []).append(entry)
 
 
 def _remove_points(data: dict[str, Any], chore: dict[str, Any], on: date, part: str | None = None) -> None:
@@ -445,20 +469,23 @@ def points_report(data: dict[str, Any], today: date) -> dict[str, Any]:
     since = points_period_start(settings, today)
     subjects = sorted({e.get("subject") for e in data.get("points_log", []) if e.get("subject")})
     names = {c.get("id"): c.get("name", c.get("id")) for c in data.get("chores", [])}
-    cutoff = since.isoformat() if since else None
+    # All entries (the front end picks the window for a subject's drill-down).
     entries = [
         {
             "subject": e.get("subject"),
             "chore": names.get(e.get("chore"), e.get("chore")),
             "points": int(e.get("points", 0)),
             "date": e.get("date"),
+            "ts": e.get("ts"),
+            "from": e.get("from"),
         }
         for e in data.get("points_log", [])
-        if e.get("subject") and not (cutoff and (e.get("date") or "") < cutoff)
+        if e.get("subject")
     ]
     return {
         "reset": settings.get("points_reset", "none"),
         "since": since.isoformat() if since else None,
+        "today": today.isoformat(),
         "subjects": subjects,
         "current": points_totals(data, since),
         "alltime": points_totals(data),
@@ -467,6 +494,15 @@ def points_report(data: dict[str, Any], today: date) -> dict[str, Any]:
         "annual": points_series(data, today, "year", 4),
         "entries": entries,
     }
+
+
+def remove_points_on(data: dict[str, Any], subject: str, date_iso: str) -> int:
+    """Remove all of a subject's points-log entries for a given date (a manual
+    'take away a day's points' action). Returns how many entries were removed."""
+    log = data.get("points_log", [])
+    kept = [e for e in log if not (e.get("subject") == subject and (e.get("date") or "") == date_iso)]
+    data["points_log"] = kept
+    return len(log) - len(kept)
 
 
 # --- crews -------------------------------------------------------------------
@@ -575,8 +611,12 @@ def _occ(data: dict[str, Any], chore: dict[str, Any], on: date, part: str | None
 def _stamp(data: dict[str, Any], item: dict[str, Any], chore: dict[str, Any], on: date, part: str | None = None) -> dict[str, Any]:
     """Attach the occurrence-level extras (done_by, ticked checklist items)."""
     occ = _occ(data, chore, on, part)
-    item["done_by"] = occ.get("done_by") if occ else None
-    item["checklist_done"] = list(occ.get("checklist_done") or []) if occ else []
+    if occ:
+        item["done_by"] = occ.get("done_by") or (", ".join(occ.get("helpers") or []) or None)
+        item["checklist_done"] = list(occ.get("checklist_done") or [])
+    else:
+        item["done_by"] = None
+        item["checklist_done"] = []
     return item
 
 

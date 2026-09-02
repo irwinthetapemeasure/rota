@@ -25,10 +25,18 @@ mark_done:
         text:
     by:
       name: By
-      description: Who did it (optional).
+      description: Who did it (optional). Credited the full points.
       example: Adon
       selector:
         text:
+    helpers:
+      name: Helpers
+      description: >-
+        For a shared chore: the people who did it together. The chore's points
+        are split evenly among them.
+      example: '["Emmit", "Ezri"]'
+      selector:
+        object:
 
 approve:
   name: Approve chore

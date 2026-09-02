@@ -24,6 +24,7 @@ class RotaCard extends HTMLElement {
     this._loading = false;
     this._pending = null; // a non-today action awaiting confirmation
     this._crediting = null; // {chore,date,part} showing its "who did it?" picker
+    this._helping = null; // {chore,date,part,sel:Set} showing the "who helped?" picker
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
 
@@ -102,13 +103,14 @@ class RotaCard extends HTMLElement {
       });
   }
 
-  _svc(action, chore, dateIso, part, by) {
+  _svc(action, chore, dateIso, part, by, helpers) {
     const map = { done: "mark_done", approve: "approve", undo: "undo" };
     if (!map[action]) return;
     const data = { chore };
     if (dateIso) data.date = dateIso;
     if (part) data.part = part;
     if (by) data.by = by;
+    if (helpers && helpers.length) data.helpers = helpers;
     const p = this._hass.callService("rota", map[action], data);
     if (this._offset !== 0 && p && p.then) p.then(() => this._fetch());
   }
@@ -235,7 +237,7 @@ class RotaCard extends HTMLElement {
     const p = this._pending;
     const label = fmtDate(dateStr);
     const verb = p.act === "approve" ? "Approve" : "Mark done";
-    const forWho = p.by ? ` &mdash; credit ${escapeHtml(p.by)}` : "";
+    const forWho = p.helpers && p.helpers.length ? ` &mdash; ${escapeHtml(p.helpers.join(", "))}` : (p.by ? ` &mdash; credit ${escapeHtml(p.by)}` : "");
     return `<div class="warnbar">
       <div class="wt"><b>This is ${escapeHtml(label)}, not today.</b><div>${verb} &ldquo;${escapeHtml(p.name)}&rdquo;${forWho} for ${escapeHtml(label)}?</div></div>
       <div class="wb"><button class="wcancel" data-confirm-no="1">Cancel</button><button class="wok" data-confirm-yes="1">Yes, ${verb.toLowerCase()}</button></div>
@@ -258,28 +260,32 @@ class RotaCard extends HTMLElement {
   _choreCard(c, longTerm) {
     const status = c.status || "todo";
     const pts = c.points ? ` &middot; +${c.points}` : "";
-    const who = c.members && c.members.length ? (c.assignee || "") + " &middot; " + c.members.join(", ")
-      : (c.bonus ? "Anyone" : (c.assignee || ""));
     const dueTxt = c.due_date ? "Due " + fmtDate(c.due_date) : c.due || "";
     const checks = new Set(c.checklist_done || []);
     const total = (c.checklist || []).length;
-    const prog = total ? ` &middot; ${checks.size}/${total}` : "";
-    const meta = (longTerm || c.floating
-      ? escapeHtml(who + (dueTxt ? " &middot; " + dueTxt : ""))
-      : escapeHtml(who + (c.require_approval ? " &middot; needs a check" : ""))) + prog;
+    // Build the meta as already-escaped pieces joined by a raw " &middot; " so the
+    // separator entity isn't double-escaped (names are escaped individually).
+    const whoHtml = c.members && c.members.length
+      ? escapeHtml(c.assignee || "") + " &middot; " + c.members.map(escapeHtml).join(", ")
+      : (c.bonus ? "Anyone" : escapeHtml(c.assignee || ""));
+    const bits = [whoHtml];
+    if ((longTerm || c.floating) && dueTxt) bits.push(escapeHtml(dueTxt));
+    else if (!longTerm && !c.floating && c.require_approval) bits.push("needs a check");
+    if (total) bits.push(`${checks.size}/${total}`);
+    const meta = bits.filter(Boolean).join(" &middot; ");
     const attrs = `data-chore="${enc(c.id)}" data-date="${enc(c.date || "")}" data-part="${enc(c.daypart || "")}"`;
     const crediting = this._crediting && this._crediting.chore === c.id
       && this._crediting.date === (c.date || "") && this._crediting.part === (c.daypart || "");
+    const helping = this._helping && this._helping.chore === c.id
+      && this._helping.date === (c.date || "") && this._helping.part === (c.daypart || "");
     const checklistHtml = total && status !== "done"
       ? `<div class="cklist">${c.checklist.map((label, i) => `<button class="ck ${checks.has(i) ? "on" : ""}" data-check="${i}" ${attrs}><span class="ckbox">${checks.has(i) ? "&check;" : ""}</span><span>${escapeHtml(label)}</span></button>`).join("")}</div>`
       : "";
-    // How completion credits points: a picker (steal / bonus) under All, else a
-    // fixed subject (the filtered person, or the per-person "everyone" instance).
-    // Under the All view, anyone can claim a chore they did &mdash; so ask "who did
-    // it?". This covers person / people / crew / bonus AND each "everyone"
-    // instance (so Joe can steal Travis's Make Bed). Pairs are the exception:
-    // they credit their whole member list, so no single-doer picker.
-    const needpick = this._pointsOn && this._subject === null && c.assign !== "pair";
+    // Completion credit: shared/pair chores open a multi-select "who helped?"
+    // (points split evenly); everything else asks "who did it?" under All (steal),
+    // or credits a fixed subject under a person filter.
+    const isPair = c.assign === "pair";
+    const needpick = this._pointsOn && this._subject === null && !isPair;
     const defaultBy = this._subject ? this._subject : (c.everyone ? (c.assignee || "") : "");
     let btn, extra = "";
     if (status === "done") {
@@ -290,15 +296,22 @@ class RotaCard extends HTMLElement {
       const credit = c.done_by ? ` (${escapeHtml(c.done_by)})` : "";
       btn = `<div class="btn pending">Waiting for a lead to check${credit}</div>`;
       extra = `<button class="approve" data-act="approve" ${attrs}>Lead: approve</button>`;
+    } else if (helping) {
+      const memberSet = new Set(c.members || []);
+      const cands = [...(c.members || []), ...this._candidates.filter((x) => !memberSet.has(x))];
+      const chips = cands.map((n) => `<button class="doer ${this._helping.sel.has(n) ? "on" : ""}" data-help="${enc(n)}">${this._helping.sel.has(n) ? "&check; " : ""}${escapeHtml(n)}</button>`).join("");
+      btn = `<div class="picker"><div class="pq">Who helped? The ${c.points || 0} pts split evenly.</div><div class="doers">${chips}</div><div class="hbtns"><button class="pcancel" data-help-cancel="1">Cancel</button><button class="hsave" data-help-save="1">Done (${this._helping.sel.size})</button></div></div>`;
     } else if (crediting) {
       const cands = [c.assignee, ...this._candidates.filter((x) => x !== c.assignee)].filter(Boolean);
       const chips = cands.map((n) => `<button class="doer" data-doer="${enc(n)}">${escapeHtml(n)}</button>`).join("");
       btn = `<div class="picker"><div class="pq">Who did it? &mdash; they get the ${c.points || 0} pts</div><div class="doers">${chips}</div><button class="pcancel" data-credit-cancel="1">Cancel</button></div>`;
+    } else if (isPair) {
+      btn = `<button class="btn ${status === "overdue" ? "over" : "todo"}" data-act="done" data-helppick="1" data-members="${enc(JSON.stringify(c.members || []))}" ${attrs}>Mark done</button>`;
     } else {
       const doneAttrs = needpick ? 'data-needpick="1"' : `data-by="${enc(defaultBy)}"`;
       btn = `<button class="btn ${status === "overdue" ? "over" : "todo"}" data-act="done" ${doneAttrs} ${attrs}>Mark done${c.bonus ? ` &middot; +${c.points || 0}` : ""}</button>`;
     }
-    return `<div class="chore ${status}${crediting ? " crediting" : ""}${c.bonus ? " bonus" : ""}"><div class="ch"><div class="nm">${escapeHtml(c.name)}</div><div class="meta">${meta}</div></div>${checklistHtml}${btn}${extra ? `<div class="extra">${extra}</div>` : ""}</div>`;
+    return `<div class="chore ${status}${crediting || helping ? " crediting" : ""}${c.bonus ? " bonus" : ""}"><div class="ch"><div class="nm">${escapeHtml(c.name)}</div><div class="meta">${meta}</div></div>${checklistHtml}${btn}${extra ? `<div class="extra">${extra}</div>` : ""}</div>`;
   }
 
   _onClick(e) {
@@ -312,7 +325,7 @@ class RotaCard extends HTMLElement {
     if (e.target.closest("[data-confirm-yes]")) {
       const p = this._pending;
       this._pending = null;
-      if (p) this._svc(p.act, p.chore, p.date, p.part, p.by);
+      if (p) this._svc(p.act, p.chore, p.date, p.part, p.by, p.helpers);
       this._render();
       return;
     }
@@ -325,6 +338,33 @@ class RotaCard extends HTMLElement {
       return;
     }
     if (e.target.closest("[data-credit-cancel]")) { this._crediting = null; this._render(); return; }
+    // Shared/pair "who helped?" multi-select.
+    const help = e.target.closest("[data-help]");
+    if (help) {
+      if (this._helping) {
+        const n = dec(help.getAttribute("data-help"));
+        if (this._helping.sel.has(n)) this._helping.sel.delete(n); else this._helping.sel.add(n);
+        this._render();
+      }
+      return;
+    }
+    if (e.target.closest("[data-help-cancel]")) { this._helping = null; this._render(); return; }
+    if (e.target.closest("[data-help-save]")) {
+      const h = this._helping;
+      if (h && h.sel.size) {
+        const cell = e.target.closest(".chore");
+        const name = cell ? cell.querySelector(".nm").textContent : h.chore;
+        const helpers = [...h.sel];
+        this._helping = null;
+        if (this._offset !== 0) {
+          this._pending = { act: "done", chore: h.chore, date: h.date, part: h.part, helpers, name };
+          this._render();
+        } else {
+          this._svc("done", h.chore, h.date, h.part, null, helpers);
+        }
+      }
+      return;
+    }
     // Tick / untick a checklist sub-item (progress only).
     const check = e.target.closest("[data-check]");
     if (check) {
@@ -344,9 +384,15 @@ class RotaCard extends HTMLElement {
       const date = dec(act.getAttribute("data-date"));
       const part = dec(act.getAttribute("data-part"));
       if (action === "done") {
-        // Some completions ask "who did it?" (steal / bonus under the All view);
-        // others credit a fixed subject (the filtered person, or the per-person
-        // "everyone" instance, or a pair's members).
+        // Shared/pair chore -> open the multi-select "who helped?" picker.
+        if (act.getAttribute("data-helppick")) {
+          let members = [];
+          try { members = JSON.parse(dec(act.getAttribute("data-members") || "[]")); } catch (err) { members = []; }
+          this._helping = { chore, date, part, sel: new Set(members) };
+          this._render();
+          return;
+        }
+        // Steal / bonus under All ask "who did it?"; others credit a fixed subject.
         if (act.getAttribute("data-needpick")) {
           this._crediting = { chore, date, part };
           this._render();
@@ -466,6 +512,10 @@ const STYLE = `<style>
   .doer:hover { background: var(--primary-color); color: var(--text-primary-color,#fff); }
   .pcancel { align-self:center; height:34px; padding:0 14px; border-radius:10px; border:1px solid var(--divider-color); background:transparent;
              color: var(--secondary-text-color); font:inherit; font-size:13px; cursor:pointer; }
+  .hbtns { display:flex; justify-content:center; gap:10px; }
+  .hsave { height:40px; padding:0 20px; border-radius:10px; border:0; background: var(--primary-color); color: var(--text-primary-color,#fff);
+           font:inherit; font-weight:600; font-size:15px; cursor:pointer; }
+  .doer.on { background: var(--primary-color); color: var(--text-primary-color,#fff); }
   .cklist { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
   .ck { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--divider-color); border-radius:10px;
         background: var(--card-background-color); color: var(--primary-text-color); font:inherit; font-size:14px; text-align:left; cursor:pointer; }
@@ -490,7 +540,7 @@ const STYLE = `<style>
   .wok { height:38px; padding:0 16px; border-radius:10px; border:0; background: var(--warning-color, #b4791a); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
 </style>`;
 
-const CARD_VERSION = "0.2.7";
+const CARD_VERSION = "0.2.8";
 if (!customElements.get("rota-card")) customElements.define("rota-card", RotaCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet &mdash; day nav, dayparts, long-term chores, approvals." });

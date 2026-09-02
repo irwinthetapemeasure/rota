@@ -28,6 +28,7 @@ _SCHEMA = vol.Schema(
         vol.Optional("date"): cv.date,
         vol.Optional("by"): cv.string,
         vol.Optional("part"): cv.string,
+        vol.Optional("helpers"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -52,7 +53,8 @@ def async_register_services(hass: HomeAssistant) -> None:
 
     async def mark_done(call: ServiceCall) -> None:
         await _coord().async_mark_done(
-            call.data["chore"], _on(call), call.data.get("by"), call.data.get("part")
+            call.data["chore"], _on(call), call.data.get("by"), call.data.get("part"),
+            call.data.get("helpers"),
         )
 
     async def approve(call: ServiceCall) -> None:

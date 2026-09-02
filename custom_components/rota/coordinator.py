@@ -87,13 +87,19 @@ class RotaCoordinator(DataUpdateCoordinator):
         return chore
 
     async def async_mark_done(
-        self, ref: str, on: date, by: str | None = None, part: str | None = None
+        self, ref: str, on: date, by: str | None = None, part: str | None = None,
+        helpers: list[str] | None = None,
     ) -> str:
         result = engine.mark_done(
-            self.store.data, self._chore(ref), on, dt_util.now().isoformat(), by, part
+            self.store.data, self._chore(ref), on, dt_util.now().isoformat(), by, part, helpers
         )
         await self._persist()
         return result
+
+    async def async_remove_points_day(self, subject: str, date_iso: str) -> int:
+        removed = engine.remove_points_on(self.store.data, subject, date_iso)
+        await self._persist()
+        return removed
 
     async def async_approve(
         self, ref: str, on: date, by: str | None = None, part: str | None = None
