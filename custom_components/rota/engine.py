@@ -506,11 +506,14 @@ def remove_points_on(data: dict[str, Any], subject: str, date_iso: str) -> int:
     return len(log) - len(kept)
 
 
-def adjust_points(data: dict[str, Any], subject: str, delta: int, ts: str, note: str | None = None) -> None:
-    """Manually add (delta > 0) or remove (delta < 0) points for a subject. Logged
-    as a standalone entry (no chore) so it shows in the drill-down and counts in
-    the totals."""
-    on = ts[:10] if len(ts) >= 10 else ts
+def adjust_points(
+    data: dict[str, Any], subject: str, delta: int, ts: str, note: str | None = None,
+    date_iso: str | None = None,
+) -> None:
+    """Manually add (delta > 0) or remove (delta < 0) points for a subject, on a
+    chosen date (defaults to today). Logged as a standalone entry (no chore) so it
+    shows in the drill-down and counts in the totals."""
+    on = date_iso or (ts[:10] if len(ts) >= 10 else ts)
     data.setdefault("points_log", []).append(
         {
             "key": f"adjust|{ts}",

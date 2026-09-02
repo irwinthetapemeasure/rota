@@ -23,6 +23,7 @@ class RotaAdminCard extends HTMLElement {
     this._pointsSubject = null; // standings row drilled into (subject name)
     this._pointsWindow = "month"; // drill-down granularity: day | week | month | year | all
     this._pointsOffset = 0; // periods back (negative) / forward from now
+    this._adjDate = null; // sticky date for the adjust/clear controls
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
 
@@ -446,15 +447,16 @@ class RotaAdminCard extends HTMLElement {
       ? entries.map((e) => `<div class="brow${e.manual ? " manual" : ""}"><span class="bname">${escapeHtml(e.chore || "")}${e["from"] ? ` <span class="stolen">stolen from ${escapeHtml(e["from"])}</span>` : ""}</span><span class="bdate">${fmtDay(e.date)}${e.ts ? " &middot; " + fmtTime(e.ts) : ""}</span><b class="bpts ${e.points < 0 ? "neg" : ""}">${sign(e.points)}</b></div>`).join("")
         + `<div class="brow tot"><span class="bname">Total &middot; ${entries.length} item${entries.length === 1 ? "" : "s"}</span><span class="bdate"></span><b class="bpts ${total < 0 ? "neg" : ""}">${sign(total)}</b></div>`
       : `<div class="vempty">Nothing in this period.</div>`;
-    const adjustRow = `<div class="brow rmrow"><span>Adjust points</span>
-      <input class="in sm" type="number" data-adjn value="5" min="1" style="width:70px">
-      <input class="in sm" data-adjnote placeholder="reason (optional)" style="flex:1;min-width:110px">
+    const adjBlock = `<div class="brow adjrow">
+      <input class="in sm" type="date" data-adjdate value="${escapeHtml(this._adjDate || p.today || "")}" style="width:150px">
+      <input class="in sm" type="number" data-adjn value="5" min="1" style="width:66px">
+      <input class="in sm" data-adjnote placeholder="reason (optional)" style="flex:1;min-width:100px">
       <button class="btn" data-adjust="add" data-subj="${enc(subject)}"><span>+</span> Add</button>
-      <button class="btn danger" data-adjust="remove" data-subj="${enc(subject)}">&minus; Remove</button></div>`;
-    const removeRow = `<div class="brow rmrow"><span>Remove a day&rsquo;s points</span><input class="in sm" type="date" data-rmdate value="${escapeHtml(p.today || "")}" style="width:150px"><button class="btn danger" data-rmday="${enc(subject)}">Remove day</button></div>`;
+      <button class="btn danger" data-adjust="remove" data-subj="${enc(subject)}">&minus; Remove</button>
+      <button class="btn danger" data-rmday="${enc(subject)}">Clear day</button></div>`;
     return `<div class="vsec">${escapeHtml(subject)}<button class="btn" data-bdclose="1" style="margin-left:auto;height:30px;padding:0 12px">Close</button></div>
       <div class="bdctl"><div class="ptabs">${gTabs}</div>${nav}</div>
-      <div class="bdwrap">${rows}${adjustRow}${removeRow}</div>`;
+      <div class="bdwrap">${rows}${adjBlock}</div>`;
   }
 
   _chart(series, subjects) {
@@ -492,15 +494,16 @@ class RotaAdminCard extends HTMLElement {
     if ((el = t("data-view"))) { this._view = el.getAttribute("data-view"); this._confirmDel = null; this._confirmDelChore = null; this._pointsSubject = null; if (this._view === "points") this._loadPoints(); this._render(); return; }
     if ((el = t("data-pview"))) { this._pointsView = el.getAttribute("data-pview"); this._render(); return; }
     if (t("data-preload")) { this._loadPoints(); return; }
-    if ((el = t("data-standsubj"))) { const s = dec(el.getAttribute("data-standsubj")); this._pointsSubject = this._pointsSubject === s ? null : s; this._render(); return; }
-    if (t("data-bdclose")) { this._pointsSubject = null; this._render(); return; }
+    if ((el = t("data-standsubj"))) { const s = dec(el.getAttribute("data-standsubj")); this._pointsSubject = this._pointsSubject === s ? null : s; this._adjDate = null; this._render(); return; }
+    if (t("data-bdclose")) { this._pointsSubject = null; this._adjDate = null; this._render(); return; }
     if ((el = t("data-pwin"))) { this._pointsWindow = el.getAttribute("data-pwin"); this._pointsOffset = 0; this._render(); return; }
     if ((el = t("data-pnav"))) { this._pointsOffset = Math.min(0, (this._pointsOffset || 0) + (+el.getAttribute("data-pnav"))); this._render(); return; }
     if ((el = t("data-rmday"))) {
       const subject = dec(el.getAttribute("data-rmday"));
-      const di = this.shadowRoot.querySelector("[data-rmdate]");
+      const di = this.shadowRoot.querySelector("[data-adjdate]");
       const date = di ? di.value : "";
-      if (date && window.confirm(`Remove all of ${subject}'s points for ${date}?`)) {
+      this._adjDate = date || null;
+      if (date && window.confirm(`Remove ALL of ${subject}'s points for ${date}?`)) {
         this._hass.connection.sendMessagePromise({ type: "rota/points/remove_day", subject, date })
           .then((pp) => { this._pointsData = pp; this._render(); })
           .catch((err) => console.error("rota remove_day", err));
@@ -511,10 +514,13 @@ class RotaAdminCard extends HTMLElement {
       const subject = dec(el.getAttribute("data-subj"));
       const nIn = this.shadowRoot.querySelector("[data-adjn]");
       const noteIn = this.shadowRoot.querySelector("[data-adjnote]");
+      const dIn = this.shadowRoot.querySelector("[data-adjdate]");
       const n = Math.abs(parseInt(nIn ? nIn.value : "0", 10) || 0);
       if (!n) return;
+      const date = dIn ? dIn.value : "";
+      this._adjDate = date || null;
       const delta = el.getAttribute("data-adjust") === "remove" ? -n : n;
-      this._hass.connection.sendMessagePromise({ type: "rota/points/adjust", subject, delta, note: noteIn ? noteIn.value : "" })
+      this._hass.connection.sendMessagePromise({ type: "rota/points/adjust", subject, delta, note: noteIn ? noteIn.value : "", date: date || undefined })
         .then((pp) => { this._pointsData = pp; this._render(); })
         .catch((err) => console.error("rota adjust", err));
       return;
@@ -780,8 +786,8 @@ const STYLE = `<style>
   .brow.tot { background: var(--secondary-background-color); font-weight:600; }
   .brow.tot .bname { color: var(--primary-text-color); }
   .stolen { font-size:11.5px; color: var(--warning-color,#b4791a); font-style:italic; }
-  .brow.rmrow { gap:10px; flex-wrap:wrap; color: var(--secondary-text-color); font-size:12.5px; }
-  .brow.rmrow .btn { height:32px; padding:0 12px; }
+  .brow.rmrow, .brow.adjrow { gap:8px; flex-wrap:wrap; color: var(--secondary-text-color); font-size:12.5px; }
+  .brow.adjrow .btn { height:32px; padding:0 12px; }
   .brow.manual .bname { font-style:italic; color: var(--secondary-text-color); }
   .bpts.neg { color: var(--error-color,#c0392b); }
   .bdctl { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 16px 8px; }
@@ -812,4 +818,4 @@ const STYLE = `<style>
 if (!customElements.get("rota-admin-card")) customElements.define("rota-admin-card", RotaAdminCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-admin-card", name: "Rota Admin", description: "Manage Rota volunteers, crews, chores, and settings." });
-console.info("%c ROTA-ADMIN-CARD %c v0.2.9 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
+console.info("%c ROTA-ADMIN-CARD %c v0.2.10 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");

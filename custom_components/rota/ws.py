@@ -84,6 +84,7 @@ def async_register_ws(hass: HomeAssistant) -> None:
             vol.Required("subject"): str,
             vol.Required("delta"): int,
             vol.Optional("note"): str,
+            vol.Optional("date"): str,
         }
     )
     @websocket_api.async_response
@@ -92,7 +93,7 @@ def async_register_ws(hass: HomeAssistant) -> None:
         if coordinator is None:
             connection.send_error(msg["id"], "not_ready", "Rota not set up")
             return
-        await coordinator.async_adjust_points(msg["subject"], msg["delta"], msg.get("note"))
+        await coordinator.async_adjust_points(msg["subject"], msg["delta"], msg.get("note"), msg.get("date"))
         connection.send_result(msg["id"], coordinator.points_report())
 
     websocket_api.async_register_command(hass, handle_points_adjust)
