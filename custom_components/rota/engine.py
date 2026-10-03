@@ -319,7 +319,10 @@ def approve(
     occ["status"] = "done"
     occ["approved_by"] = by
     occ["approved_ts"] = ts
-    _post_points(data, chore, on, ts, part, subject=occ.get("done_by"), helpers=occ.get("helpers"))
+    _post_points(
+        data, chore, on, ts, part, subject=occ.get("done_by"), helpers=occ.get("helpers"),
+        done_ts=occ.get("ts"),
+    )
     return "done"
 
 
@@ -342,7 +345,7 @@ def _split_points(points: int, people: list[str]) -> list[tuple[str, int]]:
 
 def _post_points(
     data: dict[str, Any], chore: dict[str, Any], on: date, ts: str, part: str | None = None,
-    subject: str | None = None, helpers: list[str] | None = None,
+    subject: str | None = None, helpers: list[str] | None = None, done_ts: str | None = None,
 ) -> None:
     settings = data.get("settings", {})
     if not settings.get("points") or not chore.get("points"):
@@ -371,13 +374,17 @@ def _post_points(
     else:
         credit = [(rostered, pts)] if rostered else []
     key = occ_key(chore["id"], on, part)
+    # Floating chores are keyed to their period's start (e.g. Monday, or the 1st),
+    # which can fall in the previous month — date their points by when they were
+    # actually done so they land in the right points window and graph bucket.
+    earned = (done_ts or ts)[:10] if chore_mode(chore) == "floating" else on.isoformat()
     for who, amount in credit:
         entry = {
             "key": key,
             "subject": who,
             "chore": chore["id"],
             "points": amount,
-            "date": on.isoformat(),
+            "date": earned,
             "ts": ts,
         }
         if rostered and who != rostered:
