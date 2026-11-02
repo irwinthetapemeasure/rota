@@ -222,15 +222,20 @@ class RotaCard extends HTMLElement {
   }
 
   _pointsStrip(a) {
-    const pts = a.points || {};
-    const subs = Object.keys(pts);
-    if (!subs.length) return "";
-    const rows = subs.map((s) => [s, pts[s]]).sort((x, y) => y[1] - x[1]);
-    const since = a.points_since ? " &middot; since " + fmtMonthDay(a.points_since) : "";
-    const chips = rows
+    const chips = (pts) => Object.keys(pts)
+      .map((s) => [s, pts[s]])
+      .sort((x, y) => y[1] - x[1])
       .map(([s, v], i) => `<span class="pchip2 ${i === 0 ? "lead" : ""}">${i === 0 ? '<span class="crown">&#9733;</span>' : ""}${escapeHtml(s)}<b>${v}</b></span>`)
       .join("");
-    return `<div class="pts"><span class="plabel">Points${since}</span><div class="pchips">${chips}</div></div>`;
+    const pts = a.points || {};
+    const hasCur = Object.keys(pts).length > 0;
+    // Last reset window (e.g. last month), so a fresh reset still shows who won.
+    const prev = a.points_prev && Object.keys(a.points_prev.totals || {}).length ? a.points_prev : null;
+    if (!hasCur && !prev) return "";
+    const since = a.points_since ? " &middot; since " + fmtMonthDay(a.points_since) : "";
+    let html = `<div class="pts"><span class="plabel">Points${since}</span><div class="pchips">${hasCur ? chips(pts) : '<span class="pnone">None yet</span>'}</div></div>`;
+    if (prev) html += `<div class="pts prev"><span class="plabel">${fmtWindow(prev, a.points_reset)}</span><div class="pchips">${chips(prev.totals)}</div></div>`;
+    return html;
   }
 
   _confirmBanner(dateStr) {
@@ -448,6 +453,15 @@ function fmtMonthDay(iso) {
   try { return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric" }); }
   catch (e) { return iso; }
 }
+function fmtWindow(w, reset) {
+  try {
+    if (reset === "monthly") return "Last month &middot; " + new Date(w.start + "T00:00:00").toLocaleDateString(undefined, { month: "long" });
+    const last = new Date(w.end + "T00:00:00");
+    last.setDate(last.getDate() - 1);
+    const md = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return (reset === "biweekly" ? "Previous 2 weeks" : "Last week") + " &middot; " + md(new Date(w.start + "T00:00:00")) + " &ndash; " + md(last);
+  } catch (e) { return "Last period"; }
+}
 const BROOM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.4 4.6 14 10M9.5 8.5l6 6M11 13l-6.5 6.5a1.5 1.5 0 0 1-2-.2M4 16s2 0 3.5 1.5S9 21 9 21M8 12l4 4"/></svg>';
 
 const STYLE = `<style>
@@ -479,6 +493,10 @@ const STYLE = `<style>
   .pchip2 b { font-variant-numeric:tabular-nums; font-weight:700; color: var(--primary-color); }
   .pchip2.lead { border-color: var(--primary-color); }
   .crown { color: #E0A83E; font-size:13px; }
+  .pts.prev { padding-top:0; }
+  .pts.prev .pchip2 { font-size:13px; padding:3px 10px; }
+  .pts.prev .pchip2 b { color: var(--secondary-text-color); }
+  .pnone { font-size:13px; color: var(--secondary-text-color); }
   .pad { padding: 16px; }
   .picks { display:flex; gap:8px; flex-wrap:wrap; padding: 4px 12px 8px; }
   .pick { border:1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color);
@@ -540,7 +558,7 @@ const STYLE = `<style>
   .wok { height:38px; padding:0 16px; border-radius:10px; border:0; background: var(--warning-color, #b4791a); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer; }
 </style>`;
 
-const CARD_VERSION = "0.2.11";
+const CARD_VERSION = "0.2.12";
 if (!customElements.get("rota-card")) customElements.define("rota-card", RotaCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-card", name: "Rota", description: "Rota crew tablet &mdash; day nav, dayparts, long-term chores, approvals." });

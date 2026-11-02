@@ -100,6 +100,9 @@ Open the **admin** dashboard first to add people, crews, chores and settings.
   editor. Scheduled = specific days; floating = do it any time before it's due.
 - **Points reset** — in the **Points** tab, choose how often standings reset
   (none / weekly / every 2 weeks / monthly). Graphs still show all history.
+  The chore card shows the last window's totals (e.g. last month) under the
+  current points, and the Points tab's standings have ‹ › arrows to step back
+  through earlier windows.
 
 ## Services
 

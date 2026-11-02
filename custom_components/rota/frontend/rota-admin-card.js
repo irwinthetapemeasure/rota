@@ -23,6 +23,7 @@ class RotaAdminCard extends HTMLElement {
     this._pointsSubject = null; // standings row drilled into (subject name)
     this._pointsWindow = "month"; // drill-down granularity: day | week | month | year | all
     this._pointsOffset = 0; // periods back (negative) / forward from now
+    this._standOffset = 0; // standings: reset windows back from the current one
     this._adjDate = null; // sticky date for the adjust/clear controls
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
@@ -381,12 +382,28 @@ class RotaAdminCard extends HTMLElement {
     const subjects = p.subjects || [];
     const viewTabs = [["weekly", "Weekly"], ["monthly", "Monthly"], ["annual", "Annual"]]
       .map(([v, l]) => `<button class="tab ${this._pointsView === v ? "sel" : ""}" data-pview="${v}">${l}</button>`).join("");
+    // Step back through past reset windows (e.g. last month's final standings).
+    const wins = p.windows || [];
+    const so = Math.min(this._standOffset || 0, Math.max(0, wins.length - 1));
+    const standTotals = so ? wins[so].totals || {} : p.current || {};
+    const standNav = wins.length
+      ? `<div class="pnav"><button class="arw2" data-snav="-1" aria-label="Earlier" ${so < wins.length - 1 ? "" : "disabled"}>&lsaquo;</button><span class="pnavlbl">${fmtWindow(wins[so], cur)}</span><button class="arw2" data-snav="1" aria-label="Later" ${so ? "" : "disabled"}>&rsaquo;</button></div>`
+      : `<span class="c">all-time</span>`;
     return `<div class="quick" style="justify-content:space-between">${resetSel}<button class="btn" data-preload="1">Refresh</button></div>
-      <div class="vsec">Current standings <span class="c">${p.since ? "this window" : "all-time"}</span><span class="hint" style="margin-left:auto;text-transform:none;letter-spacing:0">Tap a name for their chores</span></div>
-      <div class="standwrap">${this._standings(p.current || {}, subjects)}</div>
+      <div class="vsec">${so ? "Final standings" : "Current standings"} ${standNav}<span class="hint" style="margin-left:auto;text-transform:none;letter-spacing:0">Tap a name for their chores</span></div>
+      <div class="standwrap">${this._standings(standTotals, subjects)}</div>
       ${this._pointsSubject ? this._breakdown(p) : ""}
       <div class="vsec">History</div>
       <div class="chartwrap"><div class="ptabs">${viewTabs}</div>${this._chart(p[this._pointsView] || [], subjects)}${this._legend(subjects)}</div>`;
+  }
+
+  // Point a name's drill-down at the standings window being viewed, where the
+  // drill-down has a matching granularity (monthly/weekly resets).
+  _syncBreakdown() {
+    const g = { monthly: "month", weekly: "week" }[(this._pointsData || {}).reset];
+    if (!g) return;
+    this._pointsWindow = g;
+    this._pointsOffset = -(this._standOffset || 0);
   }
 
   _standings(totals, subjects) {
@@ -494,7 +511,14 @@ class RotaAdminCard extends HTMLElement {
     if ((el = t("data-view"))) { this._view = el.getAttribute("data-view"); this._confirmDel = null; this._confirmDelChore = null; this._pointsSubject = null; if (this._view === "points") this._loadPoints(); this._render(); return; }
     if ((el = t("data-pview"))) { this._pointsView = el.getAttribute("data-pview"); this._render(); return; }
     if (t("data-preload")) { this._loadPoints(); return; }
-    if ((el = t("data-standsubj"))) { const s = dec(el.getAttribute("data-standsubj")); this._pointsSubject = this._pointsSubject === s ? null : s; this._adjDate = null; this._render(); return; }
+    if ((el = t("data-standsubj"))) { const s = dec(el.getAttribute("data-standsubj")); this._pointsSubject = this._pointsSubject === s ? null : s; this._adjDate = null; this._syncBreakdown(); this._render(); return; }
+    if ((el = t("data-snav"))) {
+      const n = ((this._pointsData || {}).windows || []).length;
+      this._standOffset = Math.max(0, Math.min(n - 1, (this._standOffset || 0) - (+el.getAttribute("data-snav"))));
+      this._syncBreakdown();
+      this._render();
+      return;
+    }
     if (t("data-bdclose")) { this._pointsSubject = null; this._adjDate = null; this._render(); return; }
     if ((el = t("data-pwin"))) { this._pointsWindow = el.getAttribute("data-pwin"); this._pointsOffset = 0; this._render(); return; }
     if ((el = t("data-pnav"))) { this._pointsOffset = Math.min(0, (this._pointsOffset || 0) + (+el.getAttribute("data-pnav"))); this._render(); return; }
@@ -639,6 +663,14 @@ const enc = (s) => encodeURIComponent(String(s == null ? "" : s));
 const dec = (s) => decodeURIComponent(String(s || ""));
 function expColor(e) { return { lead: "#2e6a52", returning: "#4C7C9C", new: "#9A6810" }[e] || "#8B948C"; }
 function fmtDay(iso) { try { return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch (e) { return iso; } }
+function fmtWindow(w, reset) {
+  try {
+    if (reset === "monthly") return new Date(w.start + "T00:00:00").toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const last = new Date(w.end + "T00:00:00");
+    last.setDate(last.getDate() - 1);
+    return `${fmtDay(w.start)} &ndash; ${last.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  } catch (e) { return w.start; }
+}
 function fmtTime(ts) { try { return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch (e) { return ""; } }
 function fmtBucket(iso, view) {
   try {
@@ -792,6 +824,7 @@ const STYLE = `<style>
   .bpts.neg { color: var(--error-color,#c0392b); }
   .bdctl { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 16px 8px; }
   .pnav { display:flex; align-items:center; gap:8px; }
+  .vsec .pnav { text-transform:none; letter-spacing:0; }
   .arw2 { width:32px; height:32px; border-radius:8px; border:1px solid var(--divider-color); background: var(--card-background-color);
           color: var(--primary-text-color); font-size:18px; line-height:1; cursor:pointer; }
   .arw2:hover:not([disabled]) { border-color: var(--primary-color); color: var(--primary-color); }
@@ -818,4 +851,4 @@ const STYLE = `<style>
 if (!customElements.get("rota-admin-card")) customElements.define("rota-admin-card", RotaAdminCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "rota-admin-card", name: "Rota Admin", description: "Manage Rota volunteers, crews, chores, and settings." });
-console.info("%c ROTA-ADMIN-CARD %c v0.2.11 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");
+console.info("%c ROTA-ADMIN-CARD %c v0.2.12 ", "color:#fff;background:#2e6a52", "color:#2e6a52;background:#eef1ee");

@@ -442,6 +442,44 @@ def _bucket_totals(log: list[dict[str, Any]], start: date, end: date) -> dict[st
     return totals
 
 
+def points_window(settings: dict[str, Any], today: date, back: int = 0) -> tuple[date, date] | None:
+    """The reset window ``back`` periods before the current one, as
+    ``(start, end)`` with ``end`` exclusive. ``None`` when points never reset."""
+    start = points_period_start(settings, today)
+    if start is None:
+        return None
+    if settings.get("points_reset") == "monthly":
+        for _ in range(back):
+            start = date(start.year - 1, 12, 1) if start.month == 1 else date(start.year, start.month - 1, 1)
+        return start, _add_month(start)
+    days = 14 if settings.get("points_reset") == "biweekly" else 7
+    start -= timedelta(days=days * back)
+    return start, start + timedelta(days=days)
+
+
+def points_windows(data: dict[str, Any], today: date, n: int) -> list[dict[str, Any]]:
+    """The current and previous ``n - 1`` reset windows, newest first, each with
+    its start/end and per-subject totals. Empty when points never reset; stops
+    at the window holding the first logged points."""
+    settings = data.get("settings", {})
+    log = data.get("points_log", [])
+    first = min((e.get("date") or "" for e in log if e.get("date")), default=None)
+    out: list[dict[str, Any]] = []
+    for back in range(n):
+        win = points_window(settings, today, back)
+        if win is None or (back and (first is None or win[1].isoformat() <= first)):
+            break
+        out.append({"start": win[0].isoformat(), "end": win[1].isoformat(), "totals": _bucket_totals(log, *win)})
+    return out
+
+
+def previous_points(data: dict[str, Any], today: date) -> dict[str, Any] | None:
+    """Totals for the reset window just before the current one (e.g. last
+    month), so standings that just reset still show who won last time."""
+    prev = points_windows(data, today, 2)[1:]
+    return prev[0] if prev else None
+
+
 def points_series(data: dict[str, Any], today: date, kind: str, n: int) -> list[dict[str, Any]]:
     """Last ``n`` buckets of points totals, oldest first. ``kind`` is
     week / month / year. Each bucket carries its start date and per-subject sums."""
@@ -500,6 +538,7 @@ def points_report(data: dict[str, Any], today: date) -> dict[str, Any]:
         "weekly": points_series(data, today, "week", 12),
         "monthly": points_series(data, today, "month", 12),
         "annual": points_series(data, today, "year", 4),
+        "windows": points_windows(data, today, 24),
         "entries": entries,
     }
 

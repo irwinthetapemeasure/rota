@@ -74,6 +74,7 @@ class RotaCoordinator(DataUpdateCoordinator):
             "points": engine.points_totals(data, since),
             "points_reset": settings.get("points_reset", "none"),
             "points_since": since.isoformat() if since else None,
+            "points_prev": engine.previous_points(data, today),
             "points_on": bool(settings.get("points")),
             "candidates": engine.credit_candidates(data),
         }
